@@ -238,6 +238,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     private fun showMenu() {
         if (menuOpen || !initialized) return
         menuOpen = true
+        releaseAllInputs()
         NativeCore.nativeSetPaused(true)
         val items = arrayOf(
             "Resume",
@@ -511,13 +512,27 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
+    // Missed release events (dialog/menu/focus steals them) would leave holds
+    // like fast forward or rewind stuck on; drop everything on any transition.
+    private fun releaseAllInputs() {
+        if (!initialized) return
+        mapper.releaseAll(this)
+        touchButtons = 0
+        touchJoyX = 0
+        touchJoyY = 0
+        NativeCore.nativeSetRewind(false)
+        if (!ffOn) NativeCore.nativeSetFastForward(false)
+        pushInput()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemUi()
+        if (hasFocus) hideSystemUi() else releaseAllInputs()
     }
 
     override fun onPause() {
         super.onPause()
+        releaseAllInputs()
         if (initialized) NativeCore.nativeSetPaused(true)
         glView.onPause()
     }

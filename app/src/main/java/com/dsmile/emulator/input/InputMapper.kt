@@ -133,6 +133,27 @@ class InputMapper(private val prefs: SharedPreferences) {
         handleKey(keyCode, pressed, 0, hotkeys)
     }
 
+    // Hysteresis: press above the threshold, release only below 60% of it.
+    // Prevents a trigger hovering at the threshold from flutter-holding.
+    private fun axisHeld(keyCode: Int, value: Float): Boolean {
+        val was = axisKeyState[keyCode] == true
+        return if (was) value > triggerThreshold * 0.6f else value > triggerThreshold
+    }
+
+    /** Force-release everything (menu opened, app paused, focus lost). Missed
+     *  release events otherwise leave hold-actions like fast forward stuck. */
+    fun releaseAll(hotkeys: HotkeyListener) {
+        pressedButtons = 0
+        joyX = 0
+        joyY = 0
+        for ((code, pressed) in axisKeyState) {
+            if (pressed) {
+                axisKeyState[code] = false
+                keyMap[code]?.let { if (it.buttonBit == 0) hotkeys.onHotkey(it, false) }
+            }
+        }
+    }
+
     /** Extracts the key code an axis gesture represents, or 0. (Used by the binding wizard.) */
     fun axisKeyOf(event: MotionEvent): Int = when {
         event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > triggerThreshold ||
@@ -162,18 +183,16 @@ class InputMapper(private val prefs: SharedPreferences) {
         synthKey(KeyEvent.KEYCODE_DPAD_RIGHT, hatX > 0.5f, hotkeys)
         synthKey(KeyEvent.KEYCODE_DPAD_UP, hatY < -0.5f, hotkeys)
         synthKey(KeyEvent.KEYCODE_DPAD_DOWN, hatY > 0.5f, hotkeys)
-        synthKey(
-            KeyEvent.KEYCODE_BUTTON_L2,
-            event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > triggerThreshold ||
-                event.getAxisValue(MotionEvent.AXIS_BRAKE) > triggerThreshold,
-            hotkeys
+        val lt = maxOf(
+            event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
+            event.getAxisValue(MotionEvent.AXIS_BRAKE)
         )
-        synthKey(
-            KeyEvent.KEYCODE_BUTTON_R2,
-            event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > triggerThreshold ||
-                event.getAxisValue(MotionEvent.AXIS_GAS) > triggerThreshold,
-            hotkeys
+        val rt = maxOf(
+            event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
+            event.getAxisValue(MotionEvent.AXIS_GAS)
         )
+        synthKey(KeyEvent.KEYCODE_BUTTON_L2, axisHeld(KeyEvent.KEYCODE_BUTTON_L2, lt), hotkeys)
+        synthKey(KeyEvent.KEYCODE_BUTTON_R2, axisHeld(KeyEvent.KEYCODE_BUTTON_R2, rt), hotkeys)
         return true
     }
 }
