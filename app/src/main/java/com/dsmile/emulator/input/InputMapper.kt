@@ -95,38 +95,82 @@ class InputMapper(private val prefs: SharedPreferences) {
     }
 
     /** Returns true if the event was consumed. */
-    fun onKey(event: KeyEvent, hotkeys: HotkeyListener): Boolean {
-        val pressed = event.action == KeyEvent.ACTION_DOWN
-        when (event.keyCode) {
+    fun onKey(event: KeyEvent, hotkeys: HotkeyListener): Boolean =
+        handleKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.repeatCount, hotkeys)
+
+    // Explicit bindings win; unbound d-pad keys fall back to the joystick.
+    private fun handleKey(keyCode: Int, pressed: Boolean, repeat: Int, hotkeys: HotkeyListener): Boolean {
+        val action = keyMap[keyCode]
+        if (action != null) {
+            if (repeat > 0) return true
+            if (action.buttonBit != 0) {
+                pressedButtons = if (pressed) pressedButtons or action.buttonBit
+                else pressedButtons and action.buttonBit.inv()
+            } else {
+                hotkeys.onHotkey(action, pressed)
+            }
+            return true
+        }
+        when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> { joyY = if (pressed) 5 else 0; return true }
             KeyEvent.KEYCODE_DPAD_DOWN -> { joyY = if (pressed) -5 else 0; return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> { joyX = if (pressed) -5 else 0; return true }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { joyX = if (pressed) 5 else 0; return true }
         }
-        val action = keyMap[event.keyCode] ?: return false
-        if (event.repeatCount > 0) return true
-        if (action.buttonBit != 0) {
-            pressedButtons = if (pressed) pressedButtons or action.buttonBit
-            else pressedButtons and action.buttonBit.inv()
-        } else {
-            hotkeys.onHotkey(action, pressed)
-        }
-        return true
+        return false
+    }
+
+    // Triggers and hats are analog axes on most gamepads; synthesize key codes
+    // so they are bindable and fire bindings like real buttons.
+    private val axisKeyState = HashMap<Int, Boolean>()
+
+    private fun synthKey(keyCode: Int, pressed: Boolean, hotkeys: HotkeyListener) {
+        if (axisKeyState[keyCode] == pressed) return
+        axisKeyState[keyCode] = pressed
+        handleKey(keyCode, pressed, 0, hotkeys)
+    }
+
+    /** Extracts the key code an axis gesture represents, or 0. (Used by the binding wizard.) */
+    fun axisKeyOf(event: MotionEvent): Int = when {
+        event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > 0.5f ||
+            event.getAxisValue(MotionEvent.AXIS_BRAKE) > 0.5f -> KeyEvent.KEYCODE_BUTTON_L2
+        event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.5f ||
+            event.getAxisValue(MotionEvent.AXIS_GAS) > 0.5f -> KeyEvent.KEYCODE_BUTTON_R2
+        event.getAxisValue(MotionEvent.AXIS_HAT_X) < -0.5f -> KeyEvent.KEYCODE_DPAD_LEFT
+        event.getAxisValue(MotionEvent.AXIS_HAT_X) > 0.5f -> KeyEvent.KEYCODE_DPAD_RIGHT
+        event.getAxisValue(MotionEvent.AXIS_HAT_Y) < -0.5f -> KeyEvent.KEYCODE_DPAD_UP
+        event.getAxisValue(MotionEvent.AXIS_HAT_Y) > 0.5f -> KeyEvent.KEYCODE_DPAD_DOWN
+        else -> 0
     }
 
     /** Handles joystick axis motion. Returns true if consumed. */
-    fun onMotion(event: MotionEvent): Boolean {
+    fun onMotion(event: MotionEvent, hotkeys: HotkeyListener): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return false
         var x = event.getAxisValue(MotionEvent.AXIS_X)
         var y = event.getAxisValue(MotionEvent.AXIS_Y)
         if (abs(x) < 0.15f) x = 0f
         if (abs(y) < 0.15f) y = 0f
-        if (x == 0f && y == 0f) {
-            x = event.getAxisValue(MotionEvent.AXIS_HAT_X)
-            y = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        }
         joyX = (x * 5f).roundToInt().coerceIn(-5, 5)
         joyY = (-y * 5f).roundToInt().coerceIn(-5, 5)
+
+        val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+        val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        synthKey(KeyEvent.KEYCODE_DPAD_LEFT, hatX < -0.5f, hotkeys)
+        synthKey(KeyEvent.KEYCODE_DPAD_RIGHT, hatX > 0.5f, hotkeys)
+        synthKey(KeyEvent.KEYCODE_DPAD_UP, hatY < -0.5f, hotkeys)
+        synthKey(KeyEvent.KEYCODE_DPAD_DOWN, hatY > 0.5f, hotkeys)
+        synthKey(
+            KeyEvent.KEYCODE_BUTTON_L2,
+            event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > 0.5f ||
+                event.getAxisValue(MotionEvent.AXIS_BRAKE) > 0.5f,
+            hotkeys
+        )
+        synthKey(
+            KeyEvent.KEYCODE_BUTTON_R2,
+            event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.5f ||
+                event.getAxisValue(MotionEvent.AXIS_GAS) > 0.5f,
+            hotkeys
+        )
         return true
     }
 }

@@ -83,7 +83,6 @@ void VSmileJoy::TxDone() {
   const bool was_active = active_;
   active_ = true;
   tx_busy_ = false;
-  if (!was_active) dump_pending_ = true;  // announce ourselves after first byte
   if (cts_ && fifo_len_ > 0) {
     StartTx();
   } else if (fifo_len_ == 0 && dump_pending_) {
@@ -134,7 +133,6 @@ void VSmileJoy::Rx(u8 byte) {
     probe_history_[0] = (hi == 0x70) ? 0 : probe_history_[1];
     probe_history_[1] = byte & 0x0F;
     QueueTx(0xB0 | (((0u - probe_history_[0] - probe_history_[1]) ^ 0xA) & 0xF));
-    dump_pending_ = true;  // re-sync state after the probe burst
   }
 }
 

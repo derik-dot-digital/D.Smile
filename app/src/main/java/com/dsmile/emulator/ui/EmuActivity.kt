@@ -174,7 +174,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (mapper.onMotion(event)) {
+        if (mapper.onMotion(event, this)) {
             pushInput()
             return true
         }
@@ -349,28 +349,35 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .setPositiveButton("Done") { _, _ -> endWizard() }
             .setCancelable(false)
             .show()
-        // The dialog window receives key events before the activity does, so
-        // capture must happen here. D-pad/back pass through for navigation.
+        // The dialog window receives input before the activity does, so capture
+        // happens here. Everything except Back is bindable (incl. d-pad keys);
+        // use the touchscreen for Skip/Unassign/Done.
         wizardDialog?.setOnKeyListener { _, keyCode, event ->
-            when (keyCode) {
-                KeyEvent.KEYCODE_BACK,
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_DPAD_CENTER -> false
-                else -> {
-                    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                        mapper.bind(keyCode, action)
-                        Toast.makeText(
-                            this,
-                            "${action.label} → ${KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        advanceWizard()
-                    }
-                    true
-                }
+            if (keyCode == KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                wizardBind(keyCode, action)
             }
+            true
         }
+        // Triggers/d-pad on many pads (incl. Xbox) are analog axes, not keys.
+        wizardDialog?.window?.decorView?.setOnGenericMotionListener { _, ev ->
+            if (ev.source and android.view.InputDevice.SOURCE_JOYSTICK ==
+                android.view.InputDevice.SOURCE_JOYSTICK) {
+                val code = mapper.axisKeyOf(ev)
+                if (code != 0 && wizardActive) wizardBind(code, action)
+                true
+            } else false
+        }
+    }
+
+    private fun wizardBind(keyCode: Int, action: com.dsmile.emulator.input.Action) {
+        mapper.bind(keyCode, action)
+        Toast.makeText(
+            this,
+            "${action.label} → ${KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")}",
+            Toast.LENGTH_SHORT
+        ).show()
+        advanceWizard()
     }
 
     private fun advanceWizard() {
