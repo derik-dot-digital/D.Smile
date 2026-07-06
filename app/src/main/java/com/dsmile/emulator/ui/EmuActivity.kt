@@ -274,7 +274,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
 
     private fun cycle(tag: String, f: () -> Unit) {
         f()
-        showMenu()  // re-open to show the new value
+        overlay.post { showMenu() }  // re-open (after dismiss) to show the new value
     }
 
     private fun pickSlot(title: String, f: (Int) -> Unit) {
@@ -286,12 +286,13 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     }
 
     private fun showOpacityDialog() {
+        val touchOverlay = overlay  // View.getOverlay() shadows the field inside apply{}
         val seek = SeekBar(this).apply {
             max = 100
-            progress = (overlay.controlOpacity * 100).toInt()
+            progress = (touchOverlay.controlOpacity * 100).toInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, p: Int, u: Boolean) {
-                    overlay.controlOpacity = p / 100f
+                    touchOverlay.controlOpacity = p / 100f
                 }
                 override fun onStartTrackingTouch(sb: SeekBar?) {}
                 override fun onStopTrackingTouch(sb: SeekBar?) {}

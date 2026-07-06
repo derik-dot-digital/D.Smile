@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(dsmile CXX)
+project(dsmile C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,4 +20,7 @@ add_library(dsmile SHARED
 )
 
 target_include_directories(dsmile PRIVATE .)
-target_link_libraries(dsmile android log oboe::oboe)
+# The AGP/NDK toolchain handoff drops the STL from the link line in this
+# configuration (ANDROID_STL never reaches CMAKE_ANDROID_STL_TYPE), so link
+# libc++_shared explicitly. AGP still packages it via the ANDROID_STL argument.
+target_link_libraries(dsmile android log oboe::oboe c++_shared)

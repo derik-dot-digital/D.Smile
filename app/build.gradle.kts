@@ -19,7 +19,7 @@ android {
         }
         externalNativeBuild {
             cmake {
-                arguments += listOf("-DANDROID_STL=c++_static")
+                arguments += listOf("-DANDROID_STL=c++_shared")
                 cppFlags += listOf("-std=c++20", "-fno-exceptions", "-fno-rtti", "-O3")
             }
         }
