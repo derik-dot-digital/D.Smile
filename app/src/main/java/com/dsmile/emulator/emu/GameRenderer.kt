@@ -10,11 +10,13 @@ import javax.microedition.khronos.opengles.GL10
 enum class ShaderMode { PIXEL, SHARP, CRT }
 enum class AspectMode { FOUR_THREE, STRETCH, INTEGER }
 enum class BackgroundMode { BLACK, VSMILE_BLUE, VSMILE_PURPLE }
+enum class BezelMode { NONE, SILVER, BLACK }
 
 class GameRenderer : GLSurfaceView.Renderer {
     @Volatile var shaderMode = ShaderMode.SHARP
     @Volatile var aspectMode = AspectMode.FOUR_THREE
     @Volatile var backgroundMode = BackgroundMode.BLACK
+    @Volatile var bezelMode = BezelMode.NONE
 
     // CRT effect intensities 0..1 (only used by the CRT shader)
     @Volatile var crtCurve = 1f
@@ -31,6 +33,8 @@ class GameRenderer : GLSurfaceView.Renderer {
     private var viewH = 1
     private val programs = HashMap<ShaderMode, Int>()
     private var bgProgram = 0
+    private var bezelProgram = 0
+    private var bezelQuad: ByteBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder())
     private var quad: ByteBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder())
     private var bgQuad: ByteBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder())
 
@@ -92,7 +96,7 @@ class GameRenderer : GLSurfaceView.Renderer {
           vec2 lim = abs(uv * 2.0 - 1.0);
           float edge = 1.0 - smoothstep(0.992, 1.0, max(lim.x, lim.y)) * uCurve;
           if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            gl_FragColor = vec4(0.0);  // transparent: background/bezel shows through
             return;
           }
           vec2 texel = uv * uTexSize;
@@ -125,7 +129,7 @@ class GameRenderer : GLSurfaceView.Renderer {
           col *= 1.0 - uVig * 0.32 * r2;
           // brightness compensation for scan/mask losses
           col *= 1.0 + 0.10 * uScan + 0.06 * uMask;
-          gl_FragColor = vec4(col * edge, 1.0);
+          gl_FragColor = vec4(col * edge, edge);  // premultiplied edge fade
         }
     """
 
@@ -154,11 +158,55 @@ class GameRenderer : GLSurfaceView.Renderer {
         }
     """
 
+    // TV bezel: rounded frame with dark tube glass behind the picture.
+    // Works with curvature (curved corners reveal glass, not background).
+    private val fragBezel = """
+        precision highp float;
+        varying vec2 vTex;
+        uniform float uMat;    // 1 = silver, 2 = black
+        uniform float uInner;  // inner opening half-size (fraction of quad)
+        float rrect(vec2 p, vec2 b, float r) {
+          vec2 d = abs(p) - b + r;
+          return length(max(d, vec2(0.0))) + min(max(d.x, d.y), 0.0) - r;
+        }
+        void main() {
+          vec2 p = vTex * 2.0 - 1.0;
+          float dOut = rrect(p, vec2(1.0), 0.14);
+          float dIn = rrect(p, vec2(uInner), 0.07);
+          float aOut = 1.0 - smoothstep(-0.012, 0.0, dOut);
+          if (aOut <= 0.0) { gl_FragColor = vec4(0.0); return; }
+          vec3 col;
+          if (dIn < 0.0) {
+            // tube glass: near-black with a soft top sheen
+            float sheen = smoothstep(0.4, 1.0, -p.y) * 0.05;
+            col = vec3(0.03 + sheen);
+          } else {
+            float v = vTex.y;
+            float lip = smoothstep(0.035, 0.0, dIn);      // inner edge highlight
+            float rim = smoothstep(-0.05, 0.0, dOut);     // outer edge shading
+            if (uMat < 1.5) {
+              float base = 0.82 - 0.28 * v;
+              base += 0.10 * smoothstep(0.35, 0.0, abs(v - 0.18));  // top specular band
+              col = vec3(base) * vec3(0.97, 0.98, 1.0);
+              col += lip * 0.14;
+              col *= 1.0 - rim * 0.35;
+            } else {
+              float base = 0.17 - 0.06 * v;
+              col = vec3(base);
+              col += lip * 0.10;
+              col *= 1.0 - rim * 0.45;
+            }
+          }
+          gl_FragColor = vec4(col * aOut, aOut);
+        }
+    """
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         programs[ShaderMode.PIXEL] = buildProgram(vertexSrc, fragPixel)
         programs[ShaderMode.SHARP] = buildProgram(vertexSrc, fragSharp)
         programs[ShaderMode.CRT] = buildProgram(vertexSrc, fragCrt)
         bgProgram = buildProgram(vertexSrc, fragBg)
+        bezelProgram = buildProgram(vertexSrc, fragBezel)
         bgQuad.position(0)
         bgQuad.asFloatBuffer().put(
             floatArrayOf(-1f, -1f, 0f, 1f, 1f, -1f, 1f, 1f, -1f, 1f, 0f, 0f, 1f, 1f, 1f, 0f)
@@ -235,6 +283,36 @@ class GameRenderer : GLSurfaceView.Renderer {
                 qh = 240f * scale / viewH
             }
         }
+
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+
+        val inner = 0.86f
+        if (bezelMode != BezelMode.NONE) {
+            bezelQuad.position(0)
+            bezelQuad.asFloatBuffer().put(
+                floatArrayOf(-qw, -qh, 0f, 1f, qw, -qh, 1f, 1f, -qw, qh, 0f, 0f, qw, qh, 1f, 0f)
+            )
+            GLES20.glUseProgram(bezelProgram)
+            val zPos = GLES20.glGetAttribLocation(bezelProgram, "aPos")
+            val zTex = GLES20.glGetAttribLocation(bezelProgram, "aTex")
+            bezelQuad.position(0)
+            GLES20.glVertexAttribPointer(zPos, 2, GLES20.GL_FLOAT, false, 16, bezelQuad)
+            bezelQuad.position(8)
+            GLES20.glVertexAttribPointer(zTex, 2, GLES20.GL_FLOAT, false, 16, bezelQuad)
+            GLES20.glEnableVertexAttribArray(zPos)
+            GLES20.glEnableVertexAttribArray(zTex)
+            GLES20.glUniform1f(
+                GLES20.glGetUniformLocation(bezelProgram, "uMat"),
+                if (bezelMode == BezelMode.SILVER) 1f else 2f
+            )
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(bezelProgram, "uInner"), inner)
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            // the picture sits inside the bezel opening
+            qw *= inner
+            qh *= inner
+        }
+
         quad.position(0)
         quad.asFloatBuffer().put(
             floatArrayOf(
@@ -275,6 +353,7 @@ class GameRenderer : GLSurfaceView.Renderer {
             setF("uVig", crtVignette)
         }
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisable(GLES20.GL_BLEND)
     }
 
     private fun buildProgram(vs: String, fs: String): Int {

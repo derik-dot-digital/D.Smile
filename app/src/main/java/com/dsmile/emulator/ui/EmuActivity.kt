@@ -18,6 +18,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.dsmile.emulator.emu.AspectMode
 import com.dsmile.emulator.emu.BackgroundMode
+import com.dsmile.emulator.emu.BezelMode
 import com.dsmile.emulator.emu.GameRenderer
 import com.dsmile.emulator.emu.NativeCore
 import com.dsmile.emulator.emu.ShaderMode
@@ -60,6 +61,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             backgroundMode = BackgroundMode.valueOf(
                 prefs.getString("background", BackgroundMode.BLACK.name)!!
             )
+            bezelMode = BezelMode.valueOf(prefs.getString("bezel", BezelMode.NONE.name)!!)
         }
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
@@ -248,6 +250,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "CRT options…",
             "Aspect ratio…",
             "Background…",
+            "Bezel…",
             "Map controller buttons…",
             "Trigger sensitivity…",
             "Reset game",
@@ -285,10 +288,18 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.backgroundMode = BackgroundMode.entries[it]
                         prefs.edit().putString("background", renderer.backgroundMode.name).apply()
                     }
-                    10 -> startBindingWizard()
-                    11 -> showTriggerDialog()
-                    12 -> NativeCore.nativeReset()
-                    13 -> confirmQuit()
+                    10 -> pickChoice(
+                        "Bezel",
+                        listOf("None", "Silver", "Black"),
+                        renderer.bezelMode.ordinal
+                    ) {
+                        renderer.bezelMode = BezelMode.entries[it]
+                        prefs.edit().putString("bezel", renderer.bezelMode.name).apply()
+                    }
+                    11 -> startBindingWizard()
+                    12 -> showTriggerDialog()
+                    13 -> NativeCore.nativeReset()
+                    14 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
