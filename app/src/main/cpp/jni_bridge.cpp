@@ -58,6 +58,7 @@ class Emulator {
 
   void SetPaused(bool p) { paused_.store(p); }
   void SetFastForward(bool ff) { fast_forward_.store(ff); }
+  void SetFastForwardSpeed(float s) { ff_speed_.store(s); }  // 0 = uncapped
   void SetRewind(bool r) { rewind_.store(r); }
   void SetInput(int x, int y, u32 buttons) {
     std::lock_guard<std::mutex> lk(core_mutex_);
@@ -116,7 +117,7 @@ class Emulator {
           vs_->DrainAudio(spu_buf_, kSpuBufMax);  // discard audio while rewinding
         } else {
           vs_->RunFrame();
-          if (++rewind_push_counter >= 2) {
+          if (++rewind_push_counter >= 1) {
             rewind_push_counter = 0;
             rewind_buf_.emplace_back();
             vs_->SaveState(rewind_buf_.back());
@@ -140,7 +141,15 @@ class Emulator {
         PushResampled(spu_buf_, n / 2);
       }
 
-      if (fast_forward_.load()) continue;  // uncapped; audio pushes drop when full
+      if (fast_forward_.load()) {
+        const float speed = ff_speed_.load();
+        if (speed <= 0.0f) continue;  // uncapped
+        next_frame += std::chrono::nanoseconds((long long)(1e9 / (frames_per_second_ * speed)));
+        const auto now = std::chrono::steady_clock::now();
+        if (next_frame < now) next_frame = now;  // don't bank time
+        std::this_thread::sleep_until(next_frame);
+        continue;
+      }
 
       if (audio_ok_) {
         // Audio-driven pacing: wait until the ring has room for the next frame.
@@ -251,6 +260,7 @@ class Emulator {
   std::atomic<bool> running_{false};
   std::atomic<bool> paused_{false};
   std::atomic<bool> fast_forward_{false};
+  std::atomic<float> ff_speed_{3.0f};
   std::atomic<bool> rewind_{false};
   std::atomic<u8> leds_{0};
 
@@ -275,7 +285,7 @@ class Emulator {
   std::unique_ptr<Callback> callback_;
 
   // rewind
-  static constexpr size_t kRewindMax = 900;  // ~30 s at 30 snapshots/s
+  static constexpr size_t kRewindMax = 900;  // ~15 s at 60 snapshots/s (1x reverse)
   std::deque<std::vector<u8>> rewind_buf_;
 };
 
@@ -330,6 +340,11 @@ Java_com_dsmile_emulator_emu_NativeCore_nativeSetPaused(JNIEnv*, jobject, jboole
 JNIEXPORT void JNICALL
 Java_com_dsmile_emulator_emu_NativeCore_nativeSetFastForward(JNIEnv*, jobject, jboolean f) {
   if (g_emu) g_emu->SetFastForward(f);
+}
+
+JNIEXPORT void JNICALL
+Java_com_dsmile_emulator_emu_NativeCore_nativeSetFastForwardSpeed(JNIEnv*, jobject, jfloat s) {
+  if (g_emu) g_emu->SetFastForwardSpeed(s);
 }
 
 JNIEXPORT void JNICALL

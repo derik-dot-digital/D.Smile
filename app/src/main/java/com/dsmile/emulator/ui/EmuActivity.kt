@@ -92,6 +92,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             return
         }
         initialized = true
+        NativeCore.nativeSetFastForwardSpeed(prefs.getFloat("ffSpeed", 3f))
         NativeCore.nativeStart()
 
         // Poll controller LEDs into the overlay a few times a second.
@@ -245,6 +246,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Save state…",
             "Load state…",
             if (ffOn) "Fast forward: ON" else "Fast forward: OFF",
+            "Fast forward speed…",
             if (overlay.controlsVisible) "Hide touch controls" else "Show touch controls",
             "Controls opacity…",
             "Shader…",
@@ -257,8 +259,11 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Reset game",
             "Quit"
         )
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { "?" }
         AlertDialog.Builder(this)
-            .setTitle(romName.substringBeforeLast('.'))
+            .setTitle("${romName.substringBeforeLast('.')}  —  D-Smile v$version")
             .setItems(items) { _, which ->
                 when (which) {
                     1 -> pickSlot("Save to slot") { saveState(it) }
@@ -268,20 +273,29 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         NativeCore.nativeSetFastForward(ffOn)
                     }
                     4 -> {
+                        val speeds = listOf(2f, 3f, 4f, 8f, 0f)
+                        val labels = listOf("2x", "3x", "4x", "8x", "Uncapped")
+                        val cur = speeds.indexOf(prefs.getFloat("ffSpeed", 3f)).coerceAtLeast(0)
+                        pickChoice("Fast forward speed", labels, cur) {
+                            prefs.edit().putFloat("ffSpeed", speeds[it]).apply()
+                            NativeCore.nativeSetFastForwardSpeed(speeds[it])
+                        }
+                    }
+                    5 -> {
                         overlay.controlsVisible = !overlay.controlsVisible
                         prefs.edit().putBoolean("touchControls", overlay.controlsVisible).apply()
                     }
-                    5 -> showOpacityDialog()
-                    6 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
+                    6 -> showOpacityDialog()
+                    7 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
                         renderer.shaderMode = ShaderMode.entries[it]
                         prefs.edit().putString("shader", renderer.shaderMode.name).apply()
                     }
-                    7 -> showCrtOptions()
-                    8 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
+                    8 -> showCrtOptions()
+                    9 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
                         renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    9 -> pickChoice(
+                    10 -> pickChoice(
                         "Background",
                         listOf("Black", "V.Smile Blue", "V.Smile Purple"),
                         renderer.backgroundMode.ordinal
@@ -289,7 +303,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.backgroundMode = BackgroundMode.entries[it]
                         prefs.edit().putString("background", renderer.backgroundMode.name).apply()
                     }
-                    10 -> pickChoice(
+                    11 -> pickChoice(
                         "Bezel",
                         listOf("None", "Silver", "Black"),
                         renderer.bezelMode.ordinal
@@ -297,10 +311,10 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.bezelMode = BezelMode.entries[it]
                         prefs.edit().putString("bezel", renderer.bezelMode.name).apply()
                     }
-                    11 -> startBindingWizard()
-                    12 -> showTriggerDialog()
-                    13 -> NativeCore.nativeReset()
-                    14 -> confirmQuit()
+                    12 -> startBindingWizard()
+                    13 -> showTriggerDialog()
+                    14 -> NativeCore.nativeReset()
+                    15 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
