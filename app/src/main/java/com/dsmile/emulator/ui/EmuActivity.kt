@@ -236,6 +236,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Video: shader (${renderer.shaderMode})",
             "Video: aspect (${renderer.aspectMode})",
             "Map controller buttons…",
+            "Trigger sensitivity…",
             "Reset game",
             "Quit"
         )
@@ -259,8 +260,9 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
                     7 -> startBindingWizard()
-                    8 -> NativeCore.nativeReset()
-                    9 -> finish()
+                    8 -> showTriggerDialog()
+                    9 -> NativeCore.nativeReset()
+                    10 -> finish()
                 }
             }
             .setOnDismissListener {
@@ -325,6 +327,22 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         wizardActive = true
         wizardIndex = 0
         showWizardStep()
+    }
+
+    private fun showTriggerDialog() {
+        val seek = SeekBar(this).apply {
+            max = 90
+            progress = ((mapper.triggerThreshold * 100).toInt() - 5).coerceIn(0, 90)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Trigger sensitivity (pull depth to register)")
+            .setView(seek)
+            .setPositiveButton("OK") { _, _ ->
+                mapper.triggerThreshold = (seek.progress + 5) / 100f
+                Toast.makeText(this, "Trigger threshold: ${seek.progress + 5}%", Toast.LENGTH_SHORT).show()
+            }
+            .setOnDismissListener { if (!menuOpen && !wizardActive && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
     }
 
     private fun showWizardStep() {

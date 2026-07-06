@@ -1,25 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Friendly V.Smile-style mascot face: orange round face, big eyes, wide open smile. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- face -->
+    <!-- face with white rim -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,30 a24,24 0 1,0 0.001,0 z" />
-    <!-- eyes -->
+        android:pathData="M54,26 a28,28 0 1,0 0.001,0 z" />
     <path
-        android:fillColor="#7C4DFF"
-        android:pathData="M45,46 a3.5,3.5 0 1,0 0.001,0 z" />
+        android:fillColor="#F7941D"
+        android:pathData="M54,29 a25,25 0 1,0 0.001,0 z" />
+    <!-- eyes: white ovals with dark pupils -->
     <path
-        android:fillColor="#7C4DFF"
-        android:pathData="M63,46 a3.5,3.5 0 1,0 0.001,0 z" />
-    <!-- smile -->
+        android:fillColor="#FFFFFF"
+        android:pathData="M44.5,39 a5.5,7 0 1,0 0.001,0 z" />
     <path
-        android:strokeColor="#FF9100"
-        android:strokeWidth="4"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M43,60 Q54,70 65,60" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M63.5,39 a5.5,7 0 1,0 0.001,0 z" />
+    <path
+        android:fillColor="#3A2A66"
+        android:pathData="M44.5,43 a2.6,3.2 0 1,0 0.001,0 z" />
+    <path
+        android:fillColor="#3A2A66"
+        android:pathData="M63.5,43 a2.6,3.2 0 1,0 0.001,0 z" />
+    <!-- open smile -->
+    <path
+        android:fillColor="#7A2E2E"
+        android:pathData="M38,58 Q54,60 70,58 Q66,74 54,74 Q42,74 38,58 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,58.5 Q54,60.5 68,58.5 Q66,63 62,64.5 Q54,66 46,64.5 Q42,63 40,58.5 Z" />
+    <!-- tongue -->
+    <path
+        android:fillColor="#E85D5D"
+        android:pathData="M47,68 Q54,64.5 61,68 Q58,72.5 54,72.5 Q50,72.5 47,68 Z" />
+    <!-- cheeks -->
+    <path
+        android:fillColor="#FBB040"
+        android:pathData="M34,52 a3.4,3.4 0 1,0 0.001,0 z" />
+    <path
+        android:fillColor="#FBB040"
+        android:pathData="M74,52 a3.4,3.4 0 1,0 0.001,0 z" />
 </vector>

@@ -31,6 +31,9 @@ interface HotkeyListener {
 // Maps physical gamepad/keyboard input to emulator actions. Remappable, persisted.
 class InputMapper(private val prefs: SharedPreferences) {
     private var keyMap = HashMap<Int, Action>()
+    /** Axis value a trigger must exceed to count as pressed (0.05-0.95). */
+    var triggerThreshold = prefs.getFloat("trigThresh", 0.5f)
+        set(v) { field = v; prefs.edit().putFloat("trigThresh", v).apply() }
     private var pressedButtons = 0
     var joyX = 0
         private set
@@ -132,10 +135,10 @@ class InputMapper(private val prefs: SharedPreferences) {
 
     /** Extracts the key code an axis gesture represents, or 0. (Used by the binding wizard.) */
     fun axisKeyOf(event: MotionEvent): Int = when {
-        event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > 0.5f ||
-            event.getAxisValue(MotionEvent.AXIS_BRAKE) > 0.5f -> KeyEvent.KEYCODE_BUTTON_L2
-        event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.5f ||
-            event.getAxisValue(MotionEvent.AXIS_GAS) > 0.5f -> KeyEvent.KEYCODE_BUTTON_R2
+        event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > triggerThreshold ||
+            event.getAxisValue(MotionEvent.AXIS_BRAKE) > triggerThreshold -> KeyEvent.KEYCODE_BUTTON_L2
+        event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > triggerThreshold ||
+            event.getAxisValue(MotionEvent.AXIS_GAS) > triggerThreshold -> KeyEvent.KEYCODE_BUTTON_R2
         event.getAxisValue(MotionEvent.AXIS_HAT_X) < -0.5f -> KeyEvent.KEYCODE_DPAD_LEFT
         event.getAxisValue(MotionEvent.AXIS_HAT_X) > 0.5f -> KeyEvent.KEYCODE_DPAD_RIGHT
         event.getAxisValue(MotionEvent.AXIS_HAT_Y) < -0.5f -> KeyEvent.KEYCODE_DPAD_UP
@@ -161,14 +164,14 @@ class InputMapper(private val prefs: SharedPreferences) {
         synthKey(KeyEvent.KEYCODE_DPAD_DOWN, hatY > 0.5f, hotkeys)
         synthKey(
             KeyEvent.KEYCODE_BUTTON_L2,
-            event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > 0.5f ||
-                event.getAxisValue(MotionEvent.AXIS_BRAKE) > 0.5f,
+            event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > triggerThreshold ||
+                event.getAxisValue(MotionEvent.AXIS_BRAKE) > triggerThreshold,
             hotkeys
         )
         synthKey(
             KeyEvent.KEYCODE_BUTTON_R2,
-            event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.5f ||
-                event.getAxisValue(MotionEvent.AXIS_GAS) > 0.5f,
+            event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > triggerThreshold ||
+                event.getAxisValue(MotionEvent.AXIS_GAS) > triggerThreshold,
             hotkeys
         )
         return true
