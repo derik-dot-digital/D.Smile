@@ -4,6 +4,13 @@
 #include <array>
 #include <vector>
 
+#ifdef DSMILE_TRACE
+#include <cstdio>
+#define DTRACE(...) std::printf(__VA_ARGS__)
+#else
+#define DTRACE(...) ((void)0)
+#endif
+
 namespace dsmile {
 
 using u8 = uint8_t;

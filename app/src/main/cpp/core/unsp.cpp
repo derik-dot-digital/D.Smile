@@ -65,6 +65,7 @@ bool UnSP::CheckInterrupts() {
   }
   if (irq_signal_ && !irq_ && irq_enable_) {
     const int line = std::countr_zero(irq_signal_);
+    DTRACE("[cpu] take irq%d\n", line);
     irq_ = true;
     Push(r_[SP], r_[PC]);
     Push(r_[SP], r_[SR]);

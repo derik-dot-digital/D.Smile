@@ -53,8 +53,6 @@ class InputMapper(private val prefs: SharedPreferences) {
         KeyEvent.KEYCODE_BUTTON_START to Action.MENU,
         KeyEvent.KEYCODE_BUTTON_THUMBR to Action.FAST_FORWARD,
         KeyEvent.KEYCODE_BUTTON_THUMBL to Action.REWIND,
-        KeyEvent.KEYCODE_ENTER to Action.ENTER,
-        KeyEvent.KEYCODE_ESCAPE to Action.BACK,
     )
 
     fun load() {
@@ -76,9 +74,16 @@ class InputMapper(private val prefs: SharedPreferences) {
         prefs.edit().putStringSet("keymap", keyMap.map { "${it.key}:${it.value.name}" }.toSet()).apply()
     }
 
+    /** Strict 1:1: assigning a key to an action removes the key from any other
+     *  action AND removes the action's previous key. */
     fun bind(keyCode: Int, action: Action) {
         keyMap.entries.removeAll { it.value == action }
         keyMap[keyCode] = action
+        save()
+    }
+
+    fun unbind(action: Action) {
+        keyMap.entries.removeAll { it.value == action }
         save()
     }
 

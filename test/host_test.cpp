@@ -94,5 +94,26 @@ int main(int argc, char** argv) {
   const u32 hash_b = FbHash(vs.Framebuffer());
   std::printf("savestate determinism: %08x vs %08x -> %s\n", hash_a, hash_b,
               hash_a == hash_b ? "PASS" : "FAIL");
-  return hash_a == hash_b ? 0 : 2;
+  if (hash_a != hash_b) return 2;
+
+  // Input effectiveness: from the same state, pressing Enter must change the
+  // future compared with no input at all (proves the controller protocol).
+  if (!vs.LoadState(state.data(), state.size())) { std::printf("LoadState failed\n"); return 1; }
+  for (int i = 0; i < 240; i++) {
+    if (i == 10) vs.SetInput(0, 0, 1);   // press Enter
+    if (i == 40) vs.SetInput(0, 0, 0);
+    vs.RunFrame();
+    vs.DrainAudio(audio.data(), (int)audio.size());
+  }
+  const u32 hash_input = FbHash(vs.Framebuffer());
+  WriteBmp("frame_inputtest.bmp", vs.Framebuffer());
+  if (!vs.LoadState(state.data(), state.size())) { std::printf("LoadState failed\n"); return 1; }
+  for (int i = 0; i < 240; i++) {
+    vs.RunFrame();
+    vs.DrainAudio(audio.data(), (int)audio.size());
+  }
+  const u32 hash_noinput = FbHash(vs.Framebuffer());
+  std::printf("input effectiveness: %08x vs %08x -> %s\n", hash_input, hash_noinput,
+              hash_input != hash_noinput ? "PASS" : "FAIL (input ignored!)");
+  return hash_input != hash_noinput ? 0 : 3;
 }

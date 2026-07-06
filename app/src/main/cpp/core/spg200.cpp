@@ -216,15 +216,22 @@ void Spg200::GpioWrite(int port, int reg, u16 val) {
 
 // ---------------- IO block ----------------
 
+static int rtrace_n = 0;
 u16 Spg200::IoRead(u32 addr) {
+#ifdef DSMILE_TRACE
+  if (rtrace_n < 400) { const u16 v = IoReadInner(addr); std::printf("[rd] %04x=%04x\n", (unsigned)addr, v); rtrace_n++; return v; }
+#endif
+  return IoReadInner(addr);
+}
+u16 Spg200::IoReadInner(u32 addr) {
   switch (addr & 0xFF) {
     case 0x00: return gpio_mode_;
     case 0x01: return GpioReadData(0);
-    case 0x02: case 0x03: case 0x04: case 0x05: return gpio_[0][(addr & 0xFF) - 0x01];
+    case 0x02: case 0x03: case 0x04: case 0x05: return gpio_[0][(addr & 0xFF) - 0x02];
     case 0x06: return GpioReadData(1);
-    case 0x07: case 0x08: case 0x09: case 0x0A: return gpio_[1][(addr & 0xFF) - 0x06];
+    case 0x07: case 0x08: case 0x09: case 0x0A: return gpio_[1][(addr & 0xFF) - 0x07];
     case 0x0B: return GpioReadData(2);
-    case 0x0C: case 0x0D: case 0x0E: case 0x0F: return gpio_[2][(addr & 0xFF) - 0x0B];
+    case 0x0C: case 0x0D: case 0x0E: case 0x0F: return gpio_[2][(addr & 0xFF) - 0x0C];
     case 0x10: return timebase_setup_;
     case 0x12: return timer_a_data_;
     case 0x13: return timer_a_ctrl_;
@@ -257,6 +264,7 @@ u16 Spg200::IoRead(u32 addr) {
     case 0x33: return uart_baud_lo_;
     case 0x34: return uart_baud_hi_;
     case 0x36: {
+      DTRACE("[uart] rxbuf-read %02x\n", uart_rx_buf_);
       uart_status_ &= (u16)~0x0080;  // clear RX full
       return uart_rx_buf_;
     }
@@ -297,10 +305,12 @@ void Spg200::IoWrite(u32 addr, u16 val) {
       return;
     case 0x20: system_ctrl_ = val & 0xC3F6; return;
     case 0x21:
+      DTRACE("[irq] ctrl=%04x (status=%04x)\n", val, io_irq_status_);
       io_irq_ctrl_ = val;
       UpdateIoIrqLines();
       return;
     case 0x22:
+      if (val & 0x1200) DTRACE("[irq] w1c %04x (status=%04x)\n", val, io_irq_status_);
       io_irq_status_ &= (u16)~val;
       UpdateIoIrqLines();
       return;
@@ -325,7 +335,7 @@ void Spg200::IoWrite(u32 addr, u16 val) {
       UpdateFiqLine();
       return;
     case 0x2F: cpu_.SetDs(val); return;
-    case 0x30: uart_ctrl_ = val; return;
+    case 0x30: DTRACE("[uart] ctrl=%04x\n", val); uart_ctrl_ = val; return;
     case 0x31:
       uart_status_ &= (u16)~(val & 0x0003);  // W1C RxReady/TxReady
       return;
@@ -337,6 +347,7 @@ void Spg200::IoWrite(u32 addr, u16 val) {
     case 0x33: uart_baud_lo_ = val & 0xFF; return;
     case 0x34: uart_baud_hi_ = val & 0xFF; return;
     case 0x35:
+      DTRACE("[uart] tx %02x (ctrl=%04x busy=%d)\n", val & 0xFF, uart_ctrl_, uart_tx_busy_);
       if ((uart_ctrl_ & 0x0080) && !uart_tx_busy_) {
         uart_tx_busy_ = true;
         uart_tx_byte_ = val & 0xFF;
@@ -371,11 +382,13 @@ void Spg200::TickUart(int cycles) {
       uart_rx_buf_ = uart_rx_incoming_;
       uart_status_ |= 0x0081;  // rx_full | rx_ready
       if (uart_ctrl_ & 0x0001) RaiseIoIrq(0x0100);
+      io_.UartRxDone();  // flow-control feedback to the controller
     }
   }
 }
 
 void Spg200::UartRxStart(u8 byte) {
+  DTRACE("[uart] rx-start %02x (ctrl=%04x pending=%d)\n", byte, uart_ctrl_, uart_rx_pending_);
   if (!(uart_ctrl_ & 0x0040) || uart_rx_pending_) return;
   uart_rx_pending_ = true;
   uart_rx_incoming_ = byte;
@@ -477,6 +490,7 @@ void Spg200::RunDma(u16 len) {
 // ---------------- IRQ wiring ----------------
 
 void Spg200::RaiseIoIrq(u16 bits) {
+  DTRACE("[irq] raise %04x (ctrl=%04x)\n", bits, io_irq_ctrl_);
   io_irq_status_ |= bits;
   UpdateIoIrqLines();
 }

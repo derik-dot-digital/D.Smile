@@ -154,10 +154,11 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         captureAction?.let { action ->
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event)
             if (event.action == KeyEvent.ACTION_DOWN) {
                 mapper.bind(event.keyCode, action)
-                captureAction = null
-                Toast.makeText(this, "${action.label} bound", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "${action.label} → ${KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")}", Toast.LENGTH_SHORT).show()
+                if (wizardActive) advanceWizard() else captureAction = null
             }
             return true
         }
@@ -249,17 +250,15 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         prefs.edit().putBoolean("touchControls", overlay.controlsVisible).apply()
                     }
                     4 -> showOpacityDialog()
-                    5 -> cycle("shader") {
-                        renderer.shaderMode = ShaderMode.entries[
-                            (renderer.shaderMode.ordinal + 1) % ShaderMode.entries.size]
+                    5 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
+                        renderer.shaderMode = ShaderMode.entries[it]
                         prefs.edit().putString("shader", renderer.shaderMode.name).apply()
                     }
-                    6 -> cycle("aspect") {
-                        renderer.aspectMode = AspectMode.entries[
-                            (renderer.aspectMode.ordinal + 1) % AspectMode.entries.size]
+                    6 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
+                        renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    7 -> showMappingDialog()
+                    7 -> startBindingWizard()
                     8 -> NativeCore.nativeReset()
                     9 -> finish()
                 }
@@ -272,9 +271,17 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .show()
     }
 
-    private fun cycle(tag: String, f: () -> Unit) {
-        f()
-        overlay.post { showMenu() }  // re-open (after dismiss) to show the new value
+    /** Radio-list picker that shows the current selection. */
+    private fun pickChoice(title: String, items: List<String>, current: Int, f: (Int) -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(items.toTypedArray(), current) { d, i ->
+                f(i)
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .setOnDismissListener { if (!menuOpen && !wizardActive && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
     }
 
     private fun pickSlot(title: String, f: (Int) -> Unit) {
@@ -308,21 +315,56 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .show()
     }
 
-    private fun showMappingDialog() {
-        val bindable = Action.entries.toTypedArray()
-        val labels = bindable.map { a ->
-            val key = mapper.bindingFor(a)
-            "${a.label}  —  ${if (key != null) KeyEvent.keyCodeToString(key).removePrefix("KEYCODE_") else "unbound"}"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Press an entry, then press a button on your controller")
-            .setItems(labels) { _, which ->
-                captureAction = bindable[which]
-                Toast.makeText(this, "Press a button for: ${bindable[which].label}", Toast.LENGTH_LONG).show()
+    // Sequential binding wizard: walks every action; press a button to bind
+    // (stealing it from any other action), Skip to keep, Unassign to clear.
+    private var wizardActive = false
+    private var wizardIndex = 0
+    private var wizardDialog: AlertDialog? = null
+
+    private fun startBindingWizard() {
+        wizardActive = true
+        wizardIndex = 0
+        showWizardStep()
+    }
+
+    private fun showWizardStep() {
+        wizardDialog?.setOnDismissListener(null)
+        wizardDialog?.dismiss()
+        val actions = Action.entries
+        if (wizardIndex >= actions.size) {
+            endWizard()
+            return
+        }
+        val action = actions[wizardIndex]
+        captureAction = action
+        val key = mapper.bindingFor(action)
+        val current = if (key != null) KeyEvent.keyCodeToString(key).removePrefix("KEYCODE_") else "unbound"
+        wizardDialog = AlertDialog.Builder(this)
+            .setTitle("${wizardIndex + 1}/${actions.size}: ${action.label}")
+            .setMessage("Press a controller button to bind\n(currently: $current)")
+            .setNeutralButton("Skip") { _, _ -> advanceWizard() }
+            .setNegativeButton("Unassign") { _, _ ->
+                mapper.unbind(action)
+                advanceWizard()
             }
-            .setNegativeButton("Reset to defaults") { _, _ -> mapper.resetBindings() }
-            .setOnDismissListener { if (!menuOpen && initialized) NativeCore.nativeSetPaused(false) }
+            .setPositiveButton("Done") { _, _ -> endWizard() }
+            .setCancelable(false)
             .show()
+    }
+
+    private fun advanceWizard() {
+        wizardIndex++
+        showWizardStep()
+    }
+
+    private fun endWizard() {
+        captureAction = null
+        wizardActive = false
+        wizardDialog?.setOnDismissListener(null)
+        wizardDialog?.dismiss()
+        wizardDialog = null
+        Toast.makeText(this, "Bindings saved", Toast.LENGTH_SHORT).show()
+        if (initialized) NativeCore.nativeSetPaused(false)
     }
 
     // ---------------- lifecycle ----------------

@@ -11,6 +11,7 @@ struct MachineIo {
   virtual u16 GpioIn(int port) = 0;                       // external pin state
   virtual void GpioOut(int port, u16 data, u16 mask) = 0; // driven outputs
   virtual void UartTx(u8 byte) = 0;                       // console -> controllers
+  virtual void UartRxDone() = 0;                          // console finished receiving a byte
   virtual u16 AdcIn(int ch) = 0;
   virtual void RunCycles(int cycles) = 0;                 // machine timers
   virtual ~MachineIo() = default;
@@ -51,6 +52,7 @@ class Spg200 {
 
  private:
   u16 IoRead(u32 addr);
+  u16 IoReadInner(u32 addr);
   void IoWrite(u32 addr, u16 val);
   u16 ExtRead(u32 addr);
   void ExtWrite(u32 addr, u16 val);
