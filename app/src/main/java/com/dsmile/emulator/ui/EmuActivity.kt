@@ -17,6 +17,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.dsmile.emulator.emu.AspectMode
+import com.dsmile.emulator.emu.BackgroundMode
 import com.dsmile.emulator.emu.GameRenderer
 import com.dsmile.emulator.emu.NativeCore
 import com.dsmile.emulator.emu.ShaderMode
@@ -51,11 +52,14 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         renderer = GameRenderer().apply {
             shaderMode = ShaderMode.valueOf(prefs.getString("shader", ShaderMode.SHARP.name)!!)
             aspectMode = AspectMode.valueOf(prefs.getString("aspect", AspectMode.FOUR_THREE.name)!!)
-            crtCurve = prefs.getBoolean("crtCurve", true)
-            crtGlow = prefs.getBoolean("crtGlow", true)
-            crtScan = prefs.getBoolean("crtScan", true)
-            crtMask = prefs.getBoolean("crtMask", true)
-            crtVignette = prefs.getBoolean("crtVig", true)
+            crtCurve = prefs.getFloat("crtCurveV", 1f)
+            crtGlow = prefs.getFloat("crtGlowV", 1f)
+            crtScan = prefs.getFloat("crtScanV", 1f)
+            crtMask = prefs.getFloat("crtMaskV", 1f)
+            crtVignette = prefs.getFloat("crtVigV", 1f)
+            backgroundMode = BackgroundMode.valueOf(
+                prefs.getString("background", BackgroundMode.BLACK.name)!!
+            )
         }
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
@@ -243,6 +247,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Shader…",
             "CRT options…",
             "Aspect ratio…",
+            "Background…",
             "Map controller buttons…",
             "Trigger sensitivity…",
             "Reset game",
@@ -272,10 +277,18 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    9 -> startBindingWizard()
-                    10 -> showTriggerDialog()
-                    11 -> NativeCore.nativeReset()
-                    12 -> confirmQuit()
+                    9 -> pickChoice(
+                        "Background",
+                        listOf("Black", "V.Smile Blue", "V.Smile Purple"),
+                        renderer.backgroundMode.ordinal
+                    ) {
+                        renderer.backgroundMode = BackgroundMode.entries[it]
+                        prefs.edit().putString("background", renderer.backgroundMode.name).apply()
+                    }
+                    10 -> startBindingWizard()
+                    11 -> showTriggerDialog()
+                    12 -> NativeCore.nativeReset()
+                    13 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
@@ -342,25 +355,45 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         showWizardStep()
     }
 
+    // Per-effect intensity sliders; changes apply live so the paused frame previews them.
     private fun showCrtOptions() {
-        val names = arrayOf("Curvature", "Glow", "Scanlines", "Aperture mask", "Vignette")
-        val keys = arrayOf("crtCurve", "crtGlow", "crtScan", "crtMask", "crtVig")
-        val checked = booleanArrayOf(
-            renderer.crtCurve, renderer.crtGlow, renderer.crtScan, renderer.crtMask, renderer.crtVignette
+        data class Fx(val name: String, val key: String, val get: () -> Float, val set: (Float) -> Unit)
+        val fx = listOf(
+            Fx("Curvature", "crtCurveV", { renderer.crtCurve }, { renderer.crtCurve = it }),
+            Fx("Glow", "crtGlowV", { renderer.crtGlow }, { renderer.crtGlow = it }),
+            Fx("Scanlines", "crtScanV", { renderer.crtScan }, { renderer.crtScan = it }),
+            Fx("Aperture mask", "crtMaskV", { renderer.crtMask }, { renderer.crtMask = it }),
+            Fx("Vignette", "crtVigV", { renderer.crtVignette }, { renderer.crtVignette = it }),
         )
+        val pad = (resources.displayMetrics.density * 20).toInt()
+        val col = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        for (e in fx) {
+            val label = android.widget.TextView(this)
+            fun labelText(v: Int) { label.text = "${e.name}: $v%" }
+            labelText((e.get() * 100).toInt())
+            val seek = SeekBar(this).apply {
+                max = 100
+                progress = (e.get() * 100).toInt()
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, p: Int, u: Boolean) {
+                        e.set(p / 100f)
+                        labelText(p)
+                        prefs.edit().putFloat(e.key, p / 100f).apply()
+                    }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            col.addView(label)
+            col.addView(seek)
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(col) }
         AlertDialog.Builder(this)
             .setTitle("CRT effects")
-            .setMultiChoiceItems(names, checked) { _, i, on ->
-                checked[i] = on
-                when (i) {
-                    0 -> renderer.crtCurve = on
-                    1 -> renderer.crtGlow = on
-                    2 -> renderer.crtScan = on
-                    3 -> renderer.crtMask = on
-                    4 -> renderer.crtVignette = on
-                }
-                prefs.edit().putBoolean(keys[i], on).apply()
-            }
+            .setView(scroll)
             .setPositiveButton("OK", null)
             .setOnDismissListener { if (!menuOpen && !wizardActive && initialized) NativeCore.nativeSetPaused(false) }
             .show()

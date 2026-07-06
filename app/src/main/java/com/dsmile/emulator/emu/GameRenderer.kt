@@ -9,17 +9,19 @@ import javax.microedition.khronos.opengles.GL10
 
 enum class ShaderMode { PIXEL, SHARP, CRT }
 enum class AspectMode { FOUR_THREE, STRETCH, INTEGER }
+enum class BackgroundMode { BLACK, VSMILE_BLUE, VSMILE_PURPLE }
 
 class GameRenderer : GLSurfaceView.Renderer {
     @Volatile var shaderMode = ShaderMode.SHARP
     @Volatile var aspectMode = AspectMode.FOUR_THREE
+    @Volatile var backgroundMode = BackgroundMode.BLACK
 
-    // CRT effect toggles (only used by the CRT shader)
-    @Volatile var crtCurve = true
-    @Volatile var crtGlow = true
-    @Volatile var crtScan = true
-    @Volatile var crtMask = true
-    @Volatile var crtVignette = true
+    // CRT effect intensities 0..1 (only used by the CRT shader)
+    @Volatile var crtCurve = 1f
+    @Volatile var crtGlow = 1f
+    @Volatile var crtScan = 1f
+    @Volatile var crtMask = 1f
+    @Volatile var crtVignette = 1f
 
     private val frameBuf: ByteBuffer =
         ByteBuffer.allocateDirect(320 * 240 * 2).order(ByteOrder.nativeOrder())
@@ -28,7 +30,9 @@ class GameRenderer : GLSurfaceView.Renderer {
     private var viewW = 1
     private var viewH = 1
     private val programs = HashMap<ShaderMode, Int>()
+    private var bgProgram = 0
     private var quad: ByteBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder())
+    private var bgQuad: ByteBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder())
 
     private val vertexSrc = """
         attribute vec2 aPos;
@@ -125,10 +129,40 @@ class GameRenderer : GLSurfaceView.Renderer {
         }
     """
 
+    // Letterbox background: V.Smile box-art blue (light wavy gradient) or console purple.
+    private val fragBg = """
+        precision mediump float;
+        varying vec2 vTex;
+        uniform float uMode;
+        void main() {
+          vec2 uv = vTex;
+          vec3 col;
+          float wave = sin((uv.x * 7.0) + uv.y * 3.0) * 0.5 + 0.5;
+          float band = smoothstep(0.35, 0.95, sin(uv.y * 6.0 - uv.x * 2.5) * 0.5 + 0.5);
+          if (uMode < 1.5) {
+            vec3 top = vec3(0.80, 0.92, 0.99);
+            vec3 bot = vec3(0.25, 0.60, 0.90);
+            col = mix(top, bot, uv.y);
+            col += (wave * 0.05 + band * 0.06) * vec3(0.9, 0.97, 1.0) * (1.0 - uv.y * 0.5);
+          } else {
+            vec3 top = vec3(0.50, 0.40, 0.79);
+            vec3 bot = vec3(0.27, 0.19, 0.49);
+            col = mix(top, bot, uv.y);
+            col += (wave * 0.03 + band * 0.04) * vec3(0.75, 0.65, 1.0);
+          }
+          gl_FragColor = vec4(col, 1.0);
+        }
+    """
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         programs[ShaderMode.PIXEL] = buildProgram(vertexSrc, fragPixel)
         programs[ShaderMode.SHARP] = buildProgram(vertexSrc, fragSharp)
         programs[ShaderMode.CRT] = buildProgram(vertexSrc, fragCrt)
+        bgProgram = buildProgram(vertexSrc, fragBg)
+        bgQuad.position(0)
+        bgQuad.asFloatBuffer().put(
+            floatArrayOf(-1f, -1f, 0f, 1f, 1f, -1f, 1f, 1f, -1f, 1f, 0f, 0f, 1f, 1f, 1f, 0f)
+        )
 
         val texs = IntArray(1)
         GLES20.glGenTextures(1, texs, 0)
@@ -152,6 +186,23 @@ class GameRenderer : GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+
+        if (backgroundMode != BackgroundMode.BLACK) {
+            GLES20.glUseProgram(bgProgram)
+            val bPos = GLES20.glGetAttribLocation(bgProgram, "aPos")
+            val bTex = GLES20.glGetAttribLocation(bgProgram, "aTex")
+            bgQuad.position(0)
+            GLES20.glVertexAttribPointer(bPos, 2, GLES20.GL_FLOAT, false, 16, bgQuad)
+            bgQuad.position(8)
+            GLES20.glVertexAttribPointer(bTex, 2, GLES20.GL_FLOAT, false, 16, bgQuad)
+            GLES20.glEnableVertexAttribArray(bPos)
+            GLES20.glEnableVertexAttribArray(bTex)
+            GLES20.glUniform1f(
+                GLES20.glGetUniformLocation(bgProgram, "uMode"),
+                if (backgroundMode == BackgroundMode.VSMILE_BLUE) 1f else 2f
+            )
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        }
 
         val seq = NativeCore.nativeGetFrame(frameBuf)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex)
@@ -212,9 +263,9 @@ class GameRenderer : GLSurfaceView.Renderer {
             if (it >= 0) GLES20.glUniform2f(it, viewW * qw, viewH * qh)
         }
         if (shaderMode == ShaderMode.CRT) {
-            fun setF(name: String, on: Boolean) {
+            fun setF(name: String, v: Float) {
                 GLES20.glGetUniformLocation(prog, name).let {
-                    if (it >= 0) GLES20.glUniform1f(it, if (on) 1f else 0f)
+                    if (it >= 0) GLES20.glUniform1f(it, v)
                 }
             }
             setF("uCurve", crtCurve)
