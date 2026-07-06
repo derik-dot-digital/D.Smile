@@ -19,6 +19,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
+            android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.DSmile">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

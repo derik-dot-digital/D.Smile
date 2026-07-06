@@ -336,7 +336,6 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             return
         }
         val action = actions[wizardIndex]
-        captureAction = action
         val key = mapper.bindingFor(action)
         val current = if (key != null) KeyEvent.keyCodeToString(key).removePrefix("KEYCODE_") else "unbound"
         wizardDialog = AlertDialog.Builder(this)
@@ -350,6 +349,28 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .setPositiveButton("Done") { _, _ -> endWizard() }
             .setCancelable(false)
             .show()
+        // The dialog window receives key events before the activity does, so
+        // capture must happen here. D-pad/back pass through for navigation.
+        wizardDialog?.setOnKeyListener { _, keyCode, event ->
+            when (keyCode) {
+                KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER -> false
+                else -> {
+                    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                        mapper.bind(keyCode, action)
+                        Toast.makeText(
+                            this,
+                            "${action.label} → ${KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        advanceWizard()
+                    }
+                    true
+                }
+            }
+        }
     }
 
     private fun advanceWizard() {
