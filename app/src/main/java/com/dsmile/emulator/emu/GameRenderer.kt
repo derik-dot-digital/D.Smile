@@ -14,6 +14,13 @@ class GameRenderer : GLSurfaceView.Renderer {
     @Volatile var shaderMode = ShaderMode.SHARP
     @Volatile var aspectMode = AspectMode.FOUR_THREE
 
+    // CRT effect toggles (only used by the CRT shader)
+    @Volatile var crtCurve = true
+    @Volatile var crtGlow = true
+    @Volatile var crtScan = true
+    @Volatile var crtMask = true
+    @Volatile var crtVignette = true
+
     private val frameBuf: ByteBuffer =
         ByteBuffer.allocateDirect(320 * 240 * 2).order(ByteOrder.nativeOrder())
     private var lastSeq = -1
@@ -58,27 +65,63 @@ class GameRenderer : GLSurfaceView.Renderer {
         }
     """
 
-    // Single-pass CRT: scanlines + aperture mask + soft curvature-free bloom.
+    // Single-pass CRT with individually toggleable effects:
+    // barrel curvature, phosphor glow, luminance-aware scanlines,
+    // aperture grille, corner vignette.
     private val fragCrt = """
         precision highp float;
         varying vec2 vTex;
         uniform sampler2D uTex;
         uniform vec2 uTexSize;
         uniform vec2 uOutSize;
+        uniform float uCurve;
+        uniform float uGlow;
+        uniform float uScan;
+        uniform float uMask;
+        uniform float uVig;
         void main() {
-          vec2 texel = vTex * uTexSize;
-          vec2 texelFloor = floor(texel) + 0.5;
-          vec2 f = texel - texelFloor;
-          vec2 uv = (texelFloor + clamp(f * 1.6, -0.5, 0.5)) / uTexSize;
-          vec3 col = texture2D(uTex, uv).rgb;
-          float scan = 0.82 + 0.18 * cos(6.28318 * texel.y);
-          float maskIdx = mod(gl_FragCoord.x, 3.0);
-          vec3 mask = vec3(1.0);
-          if (maskIdx < 1.0)      mask = vec3(1.06, 0.94, 0.94);
-          else if (maskIdx < 2.0) mask = vec3(0.94, 1.06, 0.94);
-          else                    mask = vec3(0.94, 0.94, 1.06);
-          col = pow(col, vec3(1.12)) * scan * mask * 1.18;
-          gl_FragColor = vec4(col, 1.0);
+          vec2 p = vTex * 2.0 - 1.0;
+          float r2 = dot(p, p);
+          p *= 1.0 + uCurve * (0.045 * r2 + 0.025 * r2 * r2);
+          vec2 uv = p * 0.5 + 0.5;
+          // black beyond the curved tube, with a soft edge
+          vec2 lim = abs(uv * 2.0 - 1.0);
+          float edge = 1.0 - smoothstep(0.992, 1.0, max(lim.x, lim.y)) * uCurve;
+          if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+          }
+          vec2 texel = uv * uTexSize;
+          vec2 tf = floor(texel) + 0.5;
+          vec2 f = clamp((texel - tf) * 1.7, -0.5, 0.5);
+          vec3 col = texture2D(uTex, (tf + f) / uTexSize).rgb;
+          // phosphor glow: 6-tap halo, brightens neighbours of hot pixels
+          vec2 px = 1.0 / uTexSize;
+          vec3 halo = texture2D(uTex, uv + vec2(px.x, 0.0)).rgb
+                    + texture2D(uTex, uv - vec2(px.x, 0.0)).rgb
+                    + texture2D(uTex, uv + vec2(0.0, px.y)).rgb
+                    + texture2D(uTex, uv - vec2(0.0, px.y)).rgb
+                    + texture2D(uTex, uv + px * vec2(1.0, -1.0)).rgb
+                    + texture2D(uTex, uv - px * vec2(1.0, -1.0)).rgb;
+          halo /= 6.0;
+          col = mix(col, max(col, halo), uGlow * 0.5);
+          col += halo * halo * uGlow * 0.3;
+          // scanlines: bright pixels bloom over the dark gaps
+          float lum = dot(col, vec3(0.299, 0.587, 0.114));
+          float scanAmt = uScan * max(0.12, 0.38 - 0.24 * lum);
+          col *= 1.0 - scanAmt * (0.5 + 0.5 * cos(6.28318 * texel.y));
+          // aperture grille
+          float m = mod(gl_FragCoord.x, 3.0);
+          vec3 mask;
+          if (m < 1.0)      mask = vec3(1.12, 0.92, 0.92);
+          else if (m < 2.0) mask = vec3(0.92, 1.12, 0.92);
+          else              mask = vec3(0.92, 0.92, 1.12);
+          col *= mix(vec3(1.0), mask, uMask);
+          // vignette
+          col *= 1.0 - uVig * 0.32 * r2;
+          // brightness compensation for scan/mask losses
+          col *= 1.0 + 0.10 * uScan + 0.06 * uMask;
+          gl_FragColor = vec4(col * edge, 1.0);
         }
     """
 
@@ -167,6 +210,18 @@ class GameRenderer : GLSurfaceView.Renderer {
         }
         GLES20.glGetUniformLocation(prog, "uOutSize").let {
             if (it >= 0) GLES20.glUniform2f(it, viewW * qw, viewH * qh)
+        }
+        if (shaderMode == ShaderMode.CRT) {
+            fun setF(name: String, on: Boolean) {
+                GLES20.glGetUniformLocation(prog, name).let {
+                    if (it >= 0) GLES20.glUniform1f(it, if (on) 1f else 0f)
+                }
+            }
+            setF("uCurve", crtCurve)
+            setF("uGlow", crtGlow)
+            setF("uScan", crtScan)
+            setF("uMask", crtMask)
+            setF("uVig", crtVignette)
         }
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
     }

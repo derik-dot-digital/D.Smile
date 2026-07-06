@@ -174,6 +174,6 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (prefs.getString("romFolder", null) != null && roms.isEmpty()) scanRoms()
+        if (prefs.getString("romFolder", null) != null) scanRoms()
     }
 }

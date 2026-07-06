@@ -33,18 +33,21 @@ class TouchOverlayView(context: Context) : View(context) {
 
     private data class Btn(
         val id: String, val label: String, val bit: Int, val color: Int,
+        val labelColor: Int = Color.WHITE,
         var cx: Float = 0f, var cy: Float = 0f, var r: Float = 0f
     )
 
+    // Colors follow the real V.Smile controller: purple body, orange enter
+    // dial with yellow lettering, orange joystick dish with a blue-violet ball.
     private val buttons = listOf(
-        Btn("red", "", NativeCore.BTN_RED, Color.rgb(220, 40, 40)),
-        Btn("yellow", "", NativeCore.BTN_YELLOW, Color.rgb(235, 195, 30)),
-        Btn("blue", "", NativeCore.BTN_BLUE, Color.rgb(40, 90, 220)),
-        Btn("green", "", NativeCore.BTN_GREEN, Color.rgb(40, 170, 60)),
-        Btn("enter", "OK", NativeCore.BTN_ENTER, Color.rgb(230, 120, 30)),
-        Btn("help", "?", NativeCore.BTN_HELP, Color.rgb(120, 90, 200)),
-        Btn("exit", "EXIT", NativeCore.BTN_BACK, Color.rgb(150, 150, 150)),
-        Btn("abc", "ABC", NativeCore.BTN_ABC, Color.rgb(90, 170, 220)),
+        Btn("red", "", NativeCore.BTN_RED, Color.rgb(224, 58, 47)),
+        Btn("yellow", "", NativeCore.BTN_YELLOW, Color.rgb(245, 197, 24)),
+        Btn("blue", "", NativeCore.BTN_BLUE, Color.rgb(46, 95, 208)),
+        Btn("green", "", NativeCore.BTN_GREEN, Color.rgb(63, 165, 60)),
+        Btn("enter", "ENTER", NativeCore.BTN_ENTER, Color.rgb(247, 148, 29), Color.rgb(255, 224, 102)),
+        Btn("help", "?", NativeCore.BTN_HELP, Color.rgb(106, 79, 163)),
+        Btn("exit", "EXIT", NativeCore.BTN_BACK, Color.rgb(124, 108, 176)),
+        Btn("abc", "ABC", NativeCore.BTN_ABC, Color.rgb(91, 111, 199)),
         Btn("menu", "☰", 0, Color.rgb(60, 60, 60)),
     )
 
@@ -95,10 +98,12 @@ class TouchOverlayView(context: Context) : View(context) {
         paint.alpha = 255
         if (controlsVisible) {
             val a = (controlOpacity * 255).toInt()
-            // joystick base
-            paint.color = Color.argb(a / 2, 255, 255, 255)
+            // joystick: orange dish with blue-violet ball (like the real unit)
+            paint.color = Color.argb(a, 247, 148, 29)
             canvas.drawCircle(joyCx, joyCy, joyR, paint)
-            paint.color = Color.argb(a, 230, 120, 30)
+            paint.color = Color.argb((a * 0.6f).toInt(), 200, 110, 20)
+            canvas.drawCircle(joyCx, joyCy, joyR * 0.62f, paint)
+            paint.color = Color.argb(a, 123, 111, 208)
             canvas.drawCircle(joyCx + joyDx * joyR * 0.55f, joyCy + joyDy * joyR * 0.55f, joyR * 0.42f, paint)
 
             for (b in buttons) {
@@ -120,9 +125,10 @@ class TouchOverlayView(context: Context) : View(context) {
                     paint.style = Paint.Style.FILL
                 }
                 if (b.label.isNotEmpty()) {
-                    textPaint.textSize = b.r * 0.7f
+                    textPaint.textSize = if (b.label.length > 3) b.r * 0.42f else b.r * 0.7f
+                    textPaint.color = b.labelColor
                     textPaint.alpha = 255
-                    canvas.drawText(b.label, b.cx, b.cy + b.r * 0.25f, textPaint)
+                    canvas.drawText(b.label, b.cx, b.cy + b.r * 0.18f, textPaint)
                 }
             }
         }

@@ -36,6 +36,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     private var romName = "game"
     private var initialized = false
     private var menuOpen = false
+    private var ffOn = false
     private var touchJoyX = 0
     private var touchJoyY = 0
     private var touchButtons = 0
@@ -50,6 +51,11 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         renderer = GameRenderer().apply {
             shaderMode = ShaderMode.valueOf(prefs.getString("shader", ShaderMode.SHARP.name)!!)
             aspectMode = AspectMode.valueOf(prefs.getString("aspect", AspectMode.FOUR_THREE.name)!!)
+            crtCurve = prefs.getBoolean("crtCurve", true)
+            crtGlow = prefs.getBoolean("crtGlow", true)
+            crtScan = prefs.getBoolean("crtScan", true)
+            crtMask = prefs.getBoolean("crtMask", true)
+            crtVignette = prefs.getBoolean("crtVig", true)
         }
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
@@ -231,38 +237,45 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Resume",
             "Save state…",
             "Load state…",
+            if (ffOn) "Fast forward: ON" else "Fast forward: OFF",
             if (overlay.controlsVisible) "Hide touch controls" else "Show touch controls",
             "Controls opacity…",
-            "Video: shader (${renderer.shaderMode})",
-            "Video: aspect (${renderer.aspectMode})",
+            "Shader…",
+            "CRT options…",
+            "Aspect ratio…",
             "Map controller buttons…",
             "Trigger sensitivity…",
             "Reset game",
             "Quit"
         )
         AlertDialog.Builder(this)
-            .setTitle("D-Smile")
+            .setTitle(romName.substringBeforeLast('.'))
             .setItems(items) { _, which ->
                 when (which) {
                     1 -> pickSlot("Save to slot") { saveState(it) }
                     2 -> pickSlot("Load from slot") { loadState(it) }
                     3 -> {
+                        ffOn = !ffOn
+                        NativeCore.nativeSetFastForward(ffOn)
+                    }
+                    4 -> {
                         overlay.controlsVisible = !overlay.controlsVisible
                         prefs.edit().putBoolean("touchControls", overlay.controlsVisible).apply()
                     }
-                    4 -> showOpacityDialog()
-                    5 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
+                    5 -> showOpacityDialog()
+                    6 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
                         renderer.shaderMode = ShaderMode.entries[it]
                         prefs.edit().putString("shader", renderer.shaderMode.name).apply()
                     }
-                    6 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
+                    7 -> showCrtOptions()
+                    8 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
                         renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    7 -> startBindingWizard()
-                    8 -> showTriggerDialog()
-                    9 -> NativeCore.nativeReset()
-                    10 -> finish()
+                    9 -> startBindingWizard()
+                    10 -> showTriggerDialog()
+                    11 -> NativeCore.nativeReset()
+                    12 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
@@ -327,6 +340,39 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         wizardActive = true
         wizardIndex = 0
         showWizardStep()
+    }
+
+    private fun showCrtOptions() {
+        val names = arrayOf("Curvature", "Glow", "Scanlines", "Aperture mask", "Vignette")
+        val keys = arrayOf("crtCurve", "crtGlow", "crtScan", "crtMask", "crtVig")
+        val checked = booleanArrayOf(
+            renderer.crtCurve, renderer.crtGlow, renderer.crtScan, renderer.crtMask, renderer.crtVignette
+        )
+        AlertDialog.Builder(this)
+            .setTitle("CRT effects")
+            .setMultiChoiceItems(names, checked) { _, i, on ->
+                checked[i] = on
+                when (i) {
+                    0 -> renderer.crtCurve = on
+                    1 -> renderer.crtGlow = on
+                    2 -> renderer.crtScan = on
+                    3 -> renderer.crtMask = on
+                    4 -> renderer.crtVignette = on
+                }
+                prefs.edit().putBoolean(keys[i], on).apply()
+            }
+            .setPositiveButton("OK", null)
+            .setOnDismissListener { if (!menuOpen && !wizardActive && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
+    }
+
+    private fun confirmQuit() {
+        AlertDialog.Builder(this)
+            .setMessage("Quit ${romName.substringBeforeLast('.')}?")
+            .setPositiveButton("Quit") { _, _ -> finish() }
+            .setNegativeButton("Cancel", null)
+            .setOnDismissListener { if (!menuOpen && !wizardActive && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
     }
 
     private fun showTriggerDialog() {
