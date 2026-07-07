@@ -272,11 +272,13 @@ class TouchOverlayView(context: Context) : View(context) {
                 stroke.color = Color.WHITE; stroke.alpha = alpha
                 stroke.strokeWidth = c.r * 0.22f
                 canvas.drawRoundRect(pill, c.r * 0.60f, c.r * 0.60f, stroke)
-                textPaint.textSize = c.r * 0.62f
+                textPaint.textSize = c.r * 0.80f
                 textPaint.color = Color.WHITE; textPaint.alpha = 255
+                textPaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
                 textPaint.isFakeBoldText = true
-                canvas.drawText("ABC", c.cx, c.cy + c.r * 0.22f, textPaint)
+                canvas.drawText("ABC", c.cx, c.cy + c.r * 0.28f, textPaint)
                 textPaint.isFakeBoldText = false
+                textPaint.typeface = android.graphics.Typeface.DEFAULT
             }
         }
     }
