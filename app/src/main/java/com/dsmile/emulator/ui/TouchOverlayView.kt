@@ -300,20 +300,24 @@ class TouchOverlayView(context: Context) : View(context) {
         }
         canvas.drawPath(check, stroke)
         stroke.strokeCap = Paint.Cap.BUTT
-        // "ENTER" along the bottom rim: placed character by character so the
-        // spread is deterministic (single-string arc text bunches on devices).
+        // "ENTER" along the bottom rim: each glyph positioned and rotated by
+        // plain trigonometry - no path APIs, so spacing is exact everywhere.
         val arcR = c.r * 0.70f
-        val arc = Path().apply {
-            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 160f, -140f)
-        }
         textPaint.textSize = c.r * 0.26f
         textPaint.color = ink; textPaint.alpha = 255
         textPaint.isFakeBoldText = true
         val word = "ENTER"
-        val arcLen = PathMeasure(arc, false).length
-        val slot = arcLen / (word.length + 1)
+        val startA = 160f
+        val sweep = -140f
         for (i in word.indices) {
-            canvas.drawTextOnPath(word[i].toString(), arc, slot * (i + 1), 0f, textPaint)
+            val deg = startA + sweep * (i + 1) / (word.length + 1)
+            val rad = Math.toRadians(deg.toDouble())
+            val px = c.cx + arcR * kotlin.math.cos(rad).toFloat()
+            val py = c.cy + arcR * kotlin.math.sin(rad).toFloat()
+            canvas.save()
+            canvas.rotate(deg - 90f, px, py)
+            canvas.drawText(word[i].toString(), px, py, textPaint)
+            canvas.restore()
         }
         textPaint.isFakeBoldText = false
     }
@@ -333,15 +337,15 @@ class TouchOverlayView(context: Context) : View(context) {
         canvas.drawRoundRect(RectF(fL, fT, fR, fB), c.r * 0.05f, c.r * 0.05f, stroke)
         val leaf = Path().apply {
             moveTo(fL, fT + c.r * 0.04f)               // hinge top (left jamb)
-            lineTo(fR - c.r * 0.14f, fT + c.r * 0.16f) // right edge, dropped
-            lineTo(fR - c.r * 0.14f, fB + c.r * 0.10f) // right edge, below frame
+            lineTo(fR - c.r * 0.20f, fT + c.r * 0.16f) // right edge, dropped
+            lineTo(fR - c.r * 0.20f, fB + c.r * 0.20f) // bottom-right, well below frame
             lineTo(fL, fB)                             // hinge bottom
             close()
         }
         paint.color = Color.WHITE; paint.alpha = 240
         canvas.drawPath(leaf, paint)
         paint.color = bodyPurple(); paint.alpha = 255
-        canvas.drawCircle(fR - c.r * 0.26f, c.cy + c.r * 0.06f, c.r * 0.065f, paint)
+        canvas.drawCircle(fR - c.r * 0.32f, c.cy + c.r * 0.08f, c.r * 0.065f, paint)
     }
 
     // ---------------- touch ----------------
