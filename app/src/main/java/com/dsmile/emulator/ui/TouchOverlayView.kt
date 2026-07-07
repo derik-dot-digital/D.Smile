@@ -319,12 +319,13 @@ class TouchOverlayView(context: Context) : View(context) {
         val ink = dialText()
         // checkmark, centered in the dial (bounding box symmetric about cx/cy)
         stroke.color = ink; stroke.alpha = 255
-        stroke.strokeWidth = c.r * 0.13f
+        stroke.strokeWidth = c.r * 0.15f
         stroke.strokeCap = Paint.Cap.ROUND
+        // wide sweeping check: short steep leg into a low vee, long leg up-right
         val check = Path().apply {
-            moveTo(c.cx - c.r * 0.24f, c.cy + c.r * 0.02f)
-            lineTo(c.cx - c.r * 0.06f, c.cy + c.r * 0.22f)
-            lineTo(c.cx + c.r * 0.24f, c.cy - c.r * 0.22f)
+            moveTo(c.cx - c.r * 0.28f, c.cy - c.r * 0.08f)
+            lineTo(c.cx - c.r * 0.10f, c.cy + c.r * 0.26f)
+            lineTo(c.cx + c.r * 0.34f, c.cy - c.r * 0.34f)
         }
         canvas.drawPath(check, stroke)
         stroke.strokeCap = Paint.Cap.BUTT
