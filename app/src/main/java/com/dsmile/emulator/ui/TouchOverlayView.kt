@@ -74,21 +74,21 @@ class TouchOverlayView(context: Context) : View(context) {
 
         val br = 7f * u
         val bx = w - 26f * u
-        val by = h - 26f * u
+        val by = h - 52f * u  // color cluster raised
         fun place(id: String, cx: Float, cy: Float, r: Float) {
             buttons.first { it.id == id }.apply { this.cx = cx; this.cy = cy; this.r = r }
         }
-        // color diamond on the right
+        // color diamond on the right, upper
         place("red", bx, by - 11f * u, br)
         place("yellow", bx + 11f * u, by, br)
         place("green", bx, by + 11f * u, br)
         place("blue", bx - 11f * u, by, br)
-        // enter to the left of the diamond
-        place("enter", bx - 26f * u, by + 6f * u, 9f * u)
-        // small buttons along the top edge
-        place("help", w * 0.5f - 20f * u, 6f * u, 5f * u)
-        place("abc", w * 0.5f, 6f * u, 5f * u)
-        place("exit", w * 0.5f + 20f * u, 6f * u, 5f * u)
+        // enter directly beneath the diamond
+        place("enter", bx, by + 30f * u, 9f * u)
+        // small buttons stacked on the left, above the joystick
+        place("help", 12f * u, h - 80f * u, 5f * u)
+        place("abc", 12f * u, h - 66f * u, 5f * u)
+        place("exit", 12f * u, h - 52f * u, 5f * u)
         place("menu", w - 8f * u, 6f * u, 5f * u)
     }
 
