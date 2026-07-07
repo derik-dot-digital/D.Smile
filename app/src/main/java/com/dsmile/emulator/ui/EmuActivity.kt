@@ -30,7 +30,15 @@ import java.io.File
 class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
 
     private lateinit var glView: GLSurfaceView
+    private lateinit var rootLayout: FrameLayout
     private lateinit var overlay: TouchOverlayView
+
+    // layout editor state
+    private var layoutEditing = false
+    private var editingBaseName: String? = null  // null = based on Default (must Save As)
+    private var editPanel: android.widget.LinearLayout? = null
+    private var scaleBox: android.widget.EditText? = null
+    private var suppressScaleWatcher = false
     private lateinit var renderer: GameRenderer
     private lateinit var mapper: InputMapper
     private val prefs by lazy { getSharedPreferences("dsmile", Context.MODE_PRIVATE) }
@@ -72,11 +80,13 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             listener = this@EmuActivity
             controlOpacity = prefs.getFloat("opacity", 0.55f)
             controlsVisible = prefs.getBoolean("touchControls", true)
+            pinkTheme = prefs.getBoolean("pinkTheme", false)
         }
-        val root = FrameLayout(this)
-        root.addView(glView)
-        root.addView(overlay)
-        setContentView(root)
+        rootLayout = FrameLayout(this)
+        rootLayout.addView(glView)
+        rootLayout.addView(overlay)
+        setContentView(rootLayout)
+        overlay.post { applyLayoutByName(prefs.getString("activeLayout", "Default")!!) }
 
         val rom = loadRomBytes()
         if (rom == null) {
@@ -163,9 +173,25 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         pushInput()
     }
 
-    override fun onMenuRequested() = showMenu()
+    override fun onMenuRequested() {
+        if (!layoutEditing) showMenu()
+    }
+
+    override fun onEditSelectionChanged(count: Int, scale: Float) {
+        suppressScaleWatcher = true
+        scaleBox?.setText(String.format("%.1f", scale))
+        suppressScaleWatcher = false
+    }
+
+    override fun onEditLayoutDirty() {}
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (layoutEditing) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                confirmDiscardEdit()
+            }
+            return true  // no game inputs while editing the layout
+        }
         captureAction?.let { action ->
             if (event.keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event)
             if (event.action == KeyEvent.ACTION_DOWN) {
@@ -187,6 +213,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (layoutEditing) return true
         if (mapper.onMotion(event, this)) {
             pushInput()
             return true
@@ -247,6 +274,9 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Load state…",
             if (ffOn) "Fast forward: ON" else "Fast forward: OFF",
             "Fast forward speed…",
+            "Controls layout…",
+            "Edit controls layout",
+            "Controller theme: ${if (overlay.pinkTheme) "Pink" else "Classic"}",
             if (overlay.controlsVisible) "Hide touch controls" else "Show touch controls",
             "Controls opacity…",
             "Shader…",
@@ -281,21 +311,27 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                             NativeCore.nativeSetFastForwardSpeed(speeds[it])
                         }
                     }
-                    5 -> {
+                    5 -> showLayoutsManager()
+                    6 -> enterLayoutEdit()
+                    7 -> {
+                        overlay.pinkTheme = !overlay.pinkTheme
+                        prefs.edit().putBoolean("pinkTheme", overlay.pinkTheme).apply()
+                    }
+                    8 -> {
                         overlay.controlsVisible = !overlay.controlsVisible
                         prefs.edit().putBoolean("touchControls", overlay.controlsVisible).apply()
                     }
-                    6 -> showOpacityDialog()
-                    7 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
+                    9 -> showOpacityDialog()
+                    10 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
                         renderer.shaderMode = ShaderMode.entries[it]
                         prefs.edit().putString("shader", renderer.shaderMode.name).apply()
                     }
-                    8 -> showCrtOptions()
-                    9 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
+                    11 -> showCrtOptions()
+                    12 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
                         renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    10 -> pickChoice(
+                    13 -> pickChoice(
                         "Background",
                         listOf("Black", "V.Smile Blue", "V.Smile Purple"),
                         renderer.backgroundMode.ordinal
@@ -303,7 +339,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.backgroundMode = BackgroundMode.entries[it]
                         prefs.edit().putString("background", renderer.backgroundMode.name).apply()
                     }
-                    11 -> pickChoice(
+                    14 -> pickChoice(
                         "Bezel",
                         listOf("None", "Silver", "Black"),
                         renderer.bezelMode.ordinal
@@ -311,10 +347,10 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.bezelMode = BezelMode.entries[it]
                         prefs.edit().putString("bezel", renderer.bezelMode.name).apply()
                     }
-                    12 -> startBindingWizard()
-                    13 -> showTriggerDialog()
-                    14 -> NativeCore.nativeReset()
-                    15 -> confirmQuit()
+                    15 -> startBindingWizard()
+                    16 -> showTriggerDialog()
+                    17 -> NativeCore.nativeReset()
+                    18 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
@@ -379,6 +415,247 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         wizardActive = true
         wizardIndex = 0
         showWizardStep()
+    }
+
+    // ---------------- controls layout editor ----------------
+
+    private fun loadLayouts(): MutableMap<String, MutableMap<String, TouchOverlayView.Placement>> {
+        val result = LinkedHashMap<String, MutableMap<String, TouchOverlayView.Placement>>()
+        val raw = prefs.getString("layouts", null) ?: return result
+        try {
+            val root = org.json.JSONObject(raw)
+            for (name in root.keys()) {
+                val ctls = root.getJSONObject(name)
+                val map = HashMap<String, TouchOverlayView.Placement>()
+                for (id in ctls.keys()) {
+                    val arr = ctls.getJSONArray(id)
+                    map[id] = TouchOverlayView.Placement(
+                        arr.getDouble(0).toFloat(), arr.getDouble(1).toFloat(), arr.getDouble(2).toFloat()
+                    )
+                }
+                result[name] = map
+            }
+        } catch (e: Exception) { /* corrupted prefs: start fresh */ }
+        return result
+    }
+
+    private fun saveLayouts(all: Map<String, Map<String, TouchOverlayView.Placement>>) {
+        val root = org.json.JSONObject()
+        for ((name, map) in all) {
+            val ctls = org.json.JSONObject()
+            for ((id, p) in map) {
+                ctls.put(id, org.json.JSONArray(listOf(p.cxF.toDouble(), p.cyF.toDouble(), p.scale.toDouble())))
+            }
+            root.put(name, ctls)
+        }
+        prefs.edit().putString("layouts", root.toString()).apply()
+    }
+
+    private fun applyLayoutByName(name: String) {
+        if (name == "Default") {
+            overlay.applyLayout(emptyMap())
+        } else {
+            overlay.applyLayout(loadLayouts()[name] ?: emptyMap())
+        }
+    }
+
+    private fun enterLayoutEdit() {
+        if (layoutEditing) return
+        layoutEditing = true
+        val active = prefs.getString("activeLayout", "Default")!!
+        editingBaseName = if (active == "Default") null else active
+        releaseAllInputs()
+        NativeCore.nativeSetPaused(true)
+        overlay.editMode = true
+        showEditPanel()
+        Toast.makeText(
+            this,
+            "Drag buttons to move. Drag empty space to box-select. Game inputs are off.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun exitLayoutEdit(reapplyActive: Boolean) {
+        layoutEditing = false
+        overlay.editMode = false
+        editPanel?.let { rootLayout.removeView(it) }
+        editPanel = null
+        scaleBox = null
+        if (reapplyActive) applyLayoutByName(prefs.getString("activeLayout", "Default")!!)
+        if (initialized && !menuOpen) NativeCore.nativeSetPaused(false)
+    }
+
+    private fun showEditPanel() {
+        val d = resources.displayMetrics.density
+        val panel = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setBackgroundColor(android.graphics.Color.argb(210, 30, 30, 40))
+            setPadding((8 * d).toInt(), (4 * d).toInt(), (8 * d).toInt(), (4 * d).toInt())
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        fun btn(label: String, onClick: () -> Unit) = android.widget.Button(this).apply {
+            text = label
+            isAllCaps = false
+            setOnClickListener { onClick() }
+        }
+        panel.addView(btn("All") { overlay.selectAll() })
+        panel.addView(btn("◀") { stepScale(-0.1f) })
+        scaleBox = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText("1.0")
+            minWidth = (56 * d).toInt()
+            gravity = android.view.Gravity.CENTER
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, _, _ ->
+                text.toString().toFloatOrNull()?.let { s -> this@EmuActivity.overlay.setSelectionScale(s) }
+                true
+            }
+        }
+        panel.addView(scaleBox)
+        panel.addView(btn("▶") { stepScale(+0.1f) })
+        panel.addView(btn("Reset") { overlay.resetSelection() })
+        panel.addView(btn("Save") { saveLayoutFlow() })
+        panel.addView(btn("Close") { confirmDiscardEdit() })
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
+            topMargin = (8 * d).toInt()
+        }
+        rootLayout.addView(panel, lp)
+        editPanel = panel
+    }
+
+    private fun stepScale(delta: Float) {
+        val cur = scaleBox?.text?.toString()?.toFloatOrNull() ?: overlay.selectionScale()
+        val next = ((cur + delta) * 10f).toInt() / 10f
+        overlay.setSelectionScale(next)
+        suppressScaleWatcher = true
+        scaleBox?.setText(String.format("%.1f", next.coerceIn(0.4f, 3f)))
+        suppressScaleWatcher = false
+    }
+
+    private fun saveLayoutFlow() {
+        val base = editingBaseName
+        if (base == null) {
+            promptSaveAs()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("Save layout")
+                .setItems(arrayOf("Save to \"$base\"", "Save as new layout…")) { _, i ->
+                    if (i == 0) persistLayout(base) else promptSaveAs()
+                }
+                .show()
+        }
+    }
+
+    private fun promptSaveAs() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Layout name"
+            setText(editingBaseName ?: "")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Save layout as")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                when {
+                    name.isEmpty() -> Toast.makeText(this, "Name required", Toast.LENGTH_SHORT).show()
+                    name.equals("Default", true) -> Toast.makeText(this, "\"Default\" is protected — pick another name", Toast.LENGTH_LONG).show()
+                    else -> persistLayout(name)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun persistLayout(name: String) {
+        val all = loadLayouts()
+        all[name] = HashMap(overlay.currentLayout())
+        saveLayouts(all)
+        prefs.edit().putString("activeLayout", name).apply()
+        Toast.makeText(this, "Layout \"$name\" saved & active", Toast.LENGTH_SHORT).show()
+        exitLayoutEdit(reapplyActive = false)
+    }
+
+    private fun confirmDiscardEdit() {
+        AlertDialog.Builder(this)
+            .setMessage("Close the layout editor? Unsaved changes are discarded.")
+            .setPositiveButton("Close") { _, _ -> exitLayoutEdit(reapplyActive = true) }
+            .setNegativeButton("Keep editing", null)
+            .show()
+    }
+
+    private fun showLayoutsManager() {
+        val all = loadLayouts()
+        val names = listOf("Default") + all.keys.sorted()
+        val active = prefs.getString("activeLayout", "Default")
+        val labels = names.map { (if (it == active) "●  " else "    ") + it }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Controls layouts")
+            .setItems(labels) { _, i -> showLayoutActions(names[i]) }
+            .setOnDismissListener { if (!menuOpen && !layoutEditing && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
+    }
+
+    private fun showLayoutActions(name: String) {
+        val isDefault = name == "Default"
+        val actions = if (isDefault) arrayOf("Use", "Edit a copy…")
+        else arrayOf("Use", "Edit…", "Rename…", "Delete")
+        AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(actions) { _, i ->
+                when {
+                    i == 0 -> {
+                        prefs.edit().putString("activeLayout", name).apply()
+                        applyLayoutByName(name)
+                        Toast.makeText(this, "Using \"$name\"", Toast.LENGTH_SHORT).show()
+                        if (!layoutEditing && initialized && !menuOpen) NativeCore.nativeSetPaused(false)
+                    }
+                    i == 1 -> {
+                        applyLayoutByName(name)
+                        prefs.edit().putString("activeLayout", name).apply()
+                        enterLayoutEdit()
+                    }
+                    i == 2 && !isDefault -> promptRename(name)
+                    i == 3 && !isDefault -> {
+                        val all = loadLayouts()
+                        all.remove(name)
+                        saveLayouts(all)
+                        if (prefs.getString("activeLayout", "Default") == name) {
+                            prefs.edit().putString("activeLayout", "Default").apply()
+                            applyLayoutByName("Default")
+                        }
+                        Toast.makeText(this, "Deleted \"$name\"", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setOnDismissListener { if (!menuOpen && !layoutEditing && initialized) NativeCore.nativeSetPaused(false) }
+            .show()
+    }
+
+    private fun promptRename(name: String) {
+        val input = android.widget.EditText(this).apply { setText(name) }
+        AlertDialog.Builder(this)
+            .setTitle("Rename layout")
+            .setView(input)
+            .setPositiveButton("Rename") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty() || newName.equals("Default", true)) {
+                    Toast.makeText(this, "Invalid name", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val all = loadLayouts()
+                all[name]?.let { all[newName] = it }
+                all.remove(name)
+                saveLayouts(all)
+                if (prefs.getString("activeLayout", "Default") == name) {
+                    prefs.edit().putString("activeLayout", newName).apply()
+                }
+                Toast.makeText(this, "Renamed to \"$newName\"", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // Per-effect intensity sliders; changes apply live so the paused frame previews them.

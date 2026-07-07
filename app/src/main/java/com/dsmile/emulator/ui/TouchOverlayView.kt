@@ -4,162 +4,379 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PathMeasure
+import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
 import com.dsmile.emulator.emu.NativeCore
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * On-screen V.Smile controller: joystick, Enter, 4 color buttons, Help/Exit/ABC.
- * Toggleable, adjustable opacity, multi-touch.
+ * On-screen V.Smile controller: joystick, Enter dial, 4 color buttons,
+ * Help/Exit/ABC. Toggleable, adjustable opacity, multi-touch, themeable
+ * (classic orange / pink console), and fully layout-editable.
  */
 class TouchOverlayView(context: Context) : View(context) {
 
     interface Listener {
         fun onTouchInput(joyX: Int, joyY: Int, buttons: Int)
         fun onMenuRequested()
+        fun onEditSelectionChanged(count: Int, scale: Float)
+        fun onEditLayoutDirty()
     }
+
+    // Normalized placement of one control: center as fraction of view size,
+    // plus a size multiplier relative to the default radius.
+    data class Placement(var cxF: Float, var cyF: Float, var scale: Float)
 
     var listener: Listener? = null
     var controlOpacity = 0.55f
         set(v) { field = v; invalidate() }
     var controlsVisible = true
-        set(v) { field = v; joyPointer = -1; buttonPointers.clear(); pushState(); invalidate() }
+        set(v) { field = v; clearTouchState(); pushState(); invalidate() }
     var leds = 0
         set(v) { if (field != v) { field = v; invalidate() } }
+    var pinkTheme = false
+        set(v) { field = v; invalidate() }
+    var editMode = false
+        set(v) {
+            field = v
+            clearTouchState()
+            selection.clear()
+            bandRect = null
+            pushState()
+            notifySelection()
+            invalidate()
+        }
 
-    private data class Btn(
-        val id: String, val label: String, val bit: Int, val color: Int,
-        val labelColor: Int = Color.WHITE,
-        var cx: Float = 0f, var cy: Float = 0f, var r: Float = 0f
-    )
-
-    // Colors follow the real V.Smile controller: purple body, orange enter
-    // dial with yellow lettering, orange joystick dish with a blue-violet ball.
-    private val buttons = listOf(
-        Btn("red", "", NativeCore.BTN_RED, Color.rgb(224, 58, 47)),
-        Btn("yellow", "", NativeCore.BTN_YELLOW, Color.rgb(245, 197, 24)),
-        Btn("blue", "", NativeCore.BTN_BLUE, Color.rgb(46, 95, 208)),
-        Btn("green", "", NativeCore.BTN_GREEN, Color.rgb(63, 165, 60)),
-        Btn("enter", "ENTER", NativeCore.BTN_ENTER, Color.rgb(247, 148, 29), Color.rgb(255, 224, 102)),
-        Btn("help", "?", NativeCore.BTN_HELP, Color.rgb(106, 79, 163)),
-        Btn("exit", "EXIT", NativeCore.BTN_BACK, Color.rgb(124, 108, 176)),
-        Btn("abc", "ABC", NativeCore.BTN_ABC, Color.rgb(91, 111, 199)),
-        Btn("menu", "☰", 0, Color.rgb(60, 60, 60)),
-    )
-
-    private var joyCx = 0f
-    private var joyCy = 0f
-    private var joyR = 0f
-    private var joyPointer = -1
-    private var joyDx = 0f
-    private var joyDy = 0f
-    private val buttonPointers = HashMap<Int, Btn>()  // pointerId -> button
-    private var heldBits = 0
-
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textAlign = Paint.Align.CENTER
+    private class Ctl(val id: String, val bit: Int) {
+        var cx = 0f; var cy = 0f; var r = 0f
+        var defCx = 0f; var defCy = 0f; var defR = 0f
     }
 
-    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        val u = min(w, h) / 100f  // layout unit
-        joyR = 16f * u
-        joyCx = joyR + 6f * u
-        joyCy = h - joyR - 13f * u  // overlay lifted ~5% from the bottom
+    private val editable = listOf(
+        Ctl("joystick", 0),
+        Ctl("red", NativeCore.BTN_RED),
+        Ctl("yellow", NativeCore.BTN_YELLOW),
+        Ctl("blue", NativeCore.BTN_BLUE),
+        Ctl("green", NativeCore.BTN_GREEN),
+        Ctl("enter", NativeCore.BTN_ENTER),
+        Ctl("help", NativeCore.BTN_HELP),
+        Ctl("exit", NativeCore.BTN_BACK),
+        Ctl("abc", NativeCore.BTN_ABC),
+    )
+    private val menuCtl = Ctl("menu", 0)
+    private fun ctl(id: String) = editable.first { it.id == id }
 
-        val br = 7f * u
-        val bx = w - 22f * u  // clear of the drawn TV bezel on wide screens
-        val by = h - 63f * u  // color cluster raised
-        fun place(id: String, cx: Float, cy: Float, r: Float) {
-            buttons.first { it.id == id }.apply { this.cx = cx; this.cy = cy; this.r = r }
+    // Active layout overrides (empty = pure default layout).
+    private var overrides = HashMap<String, Placement>()
+
+    fun applyLayout(layout: Map<String, Placement>) {
+        overrides = HashMap(layout.mapValues { Placement(it.value.cxF, it.value.cyF, it.value.scale) })
+        relayout()
+        invalidate()
+    }
+
+    fun currentLayout(): Map<String, Placement> =
+        overrides.mapValues { Placement(it.value.cxF, it.value.cyF, it.value.scale) }
+
+    // ---------------- layout ----------------
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        val u = min(w, h) / 100f
+        fun def(id: String, cx: Float, cy: Float, r: Float) {
+            ctl(id).apply { defCx = cx; defCy = cy; defR = r }
         }
-        // color diamond on the right, upper
-        place("red", bx, by - 11f * u, br)
-        place("yellow", bx + 11f * u, by, br)
-        place("green", bx, by + 11f * u, br)
-        place("blue", bx - 11f * u, by, br)
-        // enter beneath the diamond, at the same height as the joystick
-        place("enter", bx, h - 29f * u, 9f * u)
-        // small buttons stacked on the left, above the joystick
-        place("help", 12f * u, h - 85f * u, 5f * u)
-        place("abc", 12f * u, h - 71f * u, 5f * u)
-        place("exit", 12f * u, h - 57f * u, 5f * u)
-        place("menu", w - 8f * u, 6f * u, 5f * u)
+        def("joystick", 22f * u, h - 24f * u, 16f * u)
+        val bx = w - 22f * u
+        val by = h - 58f * u
+        def("red", bx, by - 11f * u, 7f * u)
+        def("yellow", bx + 11f * u, by, 7f * u)
+        def("green", bx, by + 11f * u, 7f * u)
+        def("blue", bx - 11f * u, by, 7f * u)
+        def("enter", bx, h - 24f * u, 9f * u)
+        def("help", 12f * u, h - 80f * u, 5f * u)
+        def("abc", 12f * u, h - 66f * u, 5f * u)
+        def("exit", 12f * u, h - 52f * u, 5f * u)
+        menuCtl.apply { cx = w - 8f * u; cy = 6f * u; r = 5f * u }
+        relayout()
+    }
+
+    private fun relayout() {
+        if (width == 0 || height == 0) return
+        for (c in editable) {
+            val o = overrides[c.id]
+            if (o != null) {
+                c.cx = o.cxF * width
+                c.cy = o.cyF * height
+                c.r = c.defR * o.scale
+            } else {
+                c.cx = c.defCx
+                c.cy = c.defCy
+                c.r = c.defR
+            }
+        }
+    }
+
+    // ---------------- edit mode API ----------------
+
+    val selection = LinkedHashSet<String>()
+
+    fun selectAll() {
+        selection.clear()
+        selection.addAll(editable.map { it.id })
+        notifySelection()
+        invalidate()
+    }
+
+    fun selectionScale(): Float {
+        val first = selection.firstOrNull() ?: return 1f
+        return overrides[first]?.scale ?: 1f
+    }
+
+    fun setSelectionScale(scale: Float) {
+        val s = scale.coerceIn(0.4f, 3f)
+        for (id in selection) ensureOverride(id).scale = s
+        relayout()
+        listener?.onEditLayoutDirty()
+        invalidate()
+    }
+
+    fun resetSelection() {
+        for (id in selection) overrides.remove(id)
+        relayout()
+        listener?.onEditLayoutDirty()
+        notifySelection()
+        invalidate()
+    }
+
+    private fun ensureOverride(id: String): Placement {
+        return overrides.getOrPut(id) {
+            val c = ctl(id)
+            Placement(c.cx / width, c.cy / height, c.r / c.defR)
+        }
+    }
+
+    private fun notifySelection() {
+        listener?.onEditSelectionChanged(selection.size, selectionScale())
+    }
+
+    // ---------------- theme ----------------
+
+    private fun bodyPurple() = if (pinkTheme) Color.rgb(150, 84, 190) else Color.rgb(106, 79, 163)
+    private fun dialColor() = if (pinkTheme) Color.rgb(246, 146, 182) else Color.rgb(247, 148, 29)
+    private fun dialText() = if (pinkTheme) Color.rgb(148, 44, 130) else Color.rgb(255, 224, 102)
+    private fun dishColor() = if (pinkTheme) Color.rgb(246, 146, 182) else Color.rgb(247, 148, 29)
+    private fun dishInner() = if (pinkTheme) Color.rgb(228, 116, 158) else Color.rgb(200, 110, 20)
+    private fun ballColor() = if (pinkTheme) Color.rgb(156, 79, 192) else Color.rgb(123, 111, 208)
+
+    // ---------------- drawing ----------------
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.WHITE
+        pathEffect = DashPathEffect(floatArrayOf(12f, 8f), 0f)
     }
 
     override fun onDraw(canvas: Canvas) {
-        val menuBtn = buttons.first { it.id == "menu" }
-        // Menu button is always visible (faint); the rest obey the toggle.
-        paint.alpha = 255
-        if (controlsVisible) {
-            val a = (controlOpacity * 255).toInt()
-            // joystick: orange dish with blue-violet ball (like the real unit)
-            paint.color = Color.argb(a, 247, 148, 29)
-            canvas.drawCircle(joyCx, joyCy, joyR, paint)
-            paint.color = Color.argb((a * 0.6f).toInt(), 200, 110, 20)
-            canvas.drawCircle(joyCx, joyCy, joyR * 0.62f, paint)
-            paint.color = Color.argb(a, 123, 111, 208)
-            canvas.drawCircle(joyCx + joyDx * joyR * 0.55f, joyCy + joyDy * joyR * 0.55f, joyR * 0.42f, paint)
-
-            for (b in buttons) {
-                if (b.id == "menu") continue
-                val held = buttonPointers.values.any { it === b }
-                paint.color = b.color
-                paint.alpha = if (held) 255 else a
-                canvas.drawCircle(b.cx, b.cy, b.r, paint)
-                // LED ring on color buttons when the game lights them
-                val ledBit = when (b.id) {
-                    "green" -> 1; "blue" -> 2; "yellow" -> 4; "red" -> 8; else -> 0
-                }
-                if (ledBit != 0 && (leds and ledBit) != 0) {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = b.r * 0.18f
-                    paint.color = Color.WHITE
-                    paint.alpha = 235
-                    canvas.drawCircle(b.cx, b.cy, b.r * 1.12f, paint)
-                    paint.style = Paint.Style.FILL
-                }
-                if (b.label.isNotEmpty()) {
-                    textPaint.textSize = if (b.label.length > 3) b.r * 0.42f else b.r * 0.7f
-                    textPaint.color = b.labelColor
-                    textPaint.alpha = 255
-                    canvas.drawText(b.label, b.cx, b.cy + b.r * 0.18f, textPaint)
-                }
+        val a = if (editMode) 235 else (controlOpacity * 255).toInt()
+        if (controlsVisible || editMode) {
+            drawJoystick(canvas, a)
+            for (c in editable) {
+                if (c.id == "joystick") continue
+                drawControl(canvas, c, a)
             }
         }
-        paint.color = menuBtn.color
-        paint.alpha = 120
-        canvas.drawCircle(menuBtn.cx, menuBtn.cy, menuBtn.r, paint)
-        textPaint.textSize = menuBtn.r
-        canvas.drawText(menuBtn.label, menuBtn.cx, menuBtn.cy + menuBtn.r * 0.35f, textPaint)
+        if (!editMode) {
+            paint.color = Color.rgb(60, 60, 60)
+            paint.alpha = 120
+            canvas.drawCircle(menuCtl.cx, menuCtl.cy, menuCtl.r, paint)
+            textPaint.textSize = menuCtl.r
+            textPaint.color = Color.WHITE
+            textPaint.alpha = 255
+            canvas.drawText("☰", menuCtl.cx, menuCtl.cy + menuCtl.r * 0.35f, textPaint)
+        } else {
+            for (id in selection) {
+                val c = ctl(id)
+                selPaint.strokeWidth = 4f
+                canvas.drawCircle(c.cx, c.cy, c.r * 1.18f + 6f, selPaint)
+            }
+            bandRect?.let {
+                paint.color = Color.argb(40, 255, 255, 255)
+                canvas.drawRect(it, paint)
+                selPaint.strokeWidth = 2f
+                canvas.drawRect(it, selPaint)
+            }
+        }
+    }
+
+    private fun drawJoystick(canvas: Canvas, a: Int) {
+        val j = ctl("joystick")
+        paint.color = dishColor(); paint.alpha = a
+        canvas.drawCircle(j.cx, j.cy, j.r, paint)
+        paint.color = dishInner(); paint.alpha = (a * 0.6f).toInt()
+        canvas.drawCircle(j.cx, j.cy, j.r * 0.62f, paint)
+        paint.color = ballColor(); paint.alpha = a
+        canvas.drawCircle(j.cx + joyDx * j.r * 0.55f, j.cy + joyDy * j.r * 0.55f, j.r * 0.42f, paint)
+    }
+
+    private fun drawControl(canvas: Canvas, c: Ctl, a: Int) {
+        val held = buttonPointers.values.any { it === c }
+        val alpha = if (held) 255 else a
+        when (c.id) {
+            "red", "yellow", "blue", "green" -> {
+                paint.color = when (c.id) {
+                    "red" -> Color.rgb(224, 58, 47)
+                    "yellow" -> Color.rgb(245, 197, 24)
+                    "blue" -> Color.rgb(46, 95, 208)
+                    else -> Color.rgb(63, 165, 60)
+                }
+                paint.alpha = alpha
+                canvas.drawCircle(c.cx, c.cy, c.r, paint)
+                paint.color = Color.WHITE; paint.alpha = (alpha * 0.35f).toInt()
+                canvas.drawCircle(c.cx - c.r * 0.3f, c.cy - c.r * 0.35f, c.r * 0.3f, paint)
+                val ledBit = when (c.id) {
+                    "green" -> 1; "blue" -> 2; "yellow" -> 4; else -> 8
+                }
+                if ((leds and ledBit) != 0) {
+                    stroke.color = Color.WHITE; stroke.alpha = 235
+                    stroke.strokeWidth = c.r * 0.18f
+                    canvas.drawCircle(c.cx, c.cy, c.r * 1.12f, stroke)
+                }
+            }
+            "enter" -> drawEnter(canvas, c, alpha)
+            "help" -> {
+                paint.color = bodyPurple(); paint.alpha = alpha
+                canvas.drawCircle(c.cx, c.cy, c.r, paint)
+                textPaint.textSize = c.r * 1.0f
+                textPaint.color = Color.WHITE; textPaint.alpha = 255
+                textPaint.isFakeBoldText = true
+                canvas.drawText("?", c.cx, c.cy + c.r * 0.36f, textPaint)
+                textPaint.isFakeBoldText = false
+            }
+            "exit" -> drawExit(canvas, c, alpha)
+            "abc" -> {
+                paint.color = bodyPurple(); paint.alpha = alpha
+                val oval = RectF(c.cx - c.r * 1.25f, c.cy - c.r * 0.75f, c.cx + c.r * 1.25f, c.cy + c.r * 0.75f)
+                canvas.drawOval(oval, paint)
+                stroke.color = Color.WHITE; stroke.alpha = alpha
+                stroke.strokeWidth = c.r * 0.09f
+                canvas.drawOval(oval, stroke)
+                textPaint.textSize = c.r * 0.75f
+                textPaint.color = Color.WHITE; textPaint.alpha = 255
+                canvas.drawText("abc", c.cx, c.cy + c.r * 0.28f, textPaint)
+            }
+        }
+    }
+
+    private fun drawEnter(canvas: Canvas, c: Ctl, alpha: Int) {
+        // silver ring, colored dial, checkmark above curved ENTER text
+        paint.color = Color.rgb(196, 200, 208); paint.alpha = alpha
+        canvas.drawCircle(c.cx, c.cy, c.r, paint)
+        paint.color = dialColor(); paint.alpha = alpha
+        canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
+
+        val ink = dialText()
+        stroke.color = ink; stroke.alpha = 255
+        stroke.strokeWidth = c.r * 0.13f
+        stroke.strokeCap = Paint.Cap.ROUND
+        val check = Path().apply {
+            moveTo(c.cx - c.r * 0.22f, c.cy - c.r * 0.10f)
+            lineTo(c.cx - c.r * 0.04f, c.cy + c.r * 0.10f)
+            lineTo(c.cx + c.r * 0.30f, c.cy - c.r * 0.38f)
+        }
+        canvas.drawPath(check, stroke)
+        stroke.strokeCap = Paint.Cap.BUTT
+        // "ENTER" curved along the bottom of the dial, letter tops toward center
+        val arcR = c.r * 0.60f
+        val arc = Path().apply {
+            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 150f, -120f)
+        }
+        textPaint.textSize = c.r * 0.30f
+        textPaint.color = ink; textPaint.alpha = 255
+        textPaint.isFakeBoldText = true
+        val half = PathMeasure(arc, false).length / 2f
+        canvas.drawTextOnPath("ENTER", arc, half, 0f, textPaint)
+        textPaint.isFakeBoldText = false
+    }
+
+    private fun drawExit(canvas: Canvas, c: Ctl, alpha: Int) {
+        paint.color = bodyPurple(); paint.alpha = alpha
+        canvas.drawCircle(c.cx, c.cy, c.r, paint)
+        // open door: frame outline + door leaf swung outward + knob
+        val fw = c.r * 0.62f
+        val fh = c.r * 0.94f
+        val fx = c.cx - fw * 0.72f
+        val fy = c.cy - fh / 2f
+        stroke.color = Color.WHITE; stroke.alpha = 255
+        stroke.strokeWidth = c.r * 0.10f
+        canvas.drawRect(fx, fy, fx + fw, fy + fh, stroke)
+        val door = Path().apply {
+            moveTo(fx + fw, fy)
+            lineTo(fx + fw + fw * 0.78f, fy - fh * 0.14f)
+            lineTo(fx + fw + fw * 0.78f, fy + fh * 0.94f)
+            lineTo(fx + fw, fy + fh)
+            close()
+        }
+        paint.color = Color.WHITE; paint.alpha = 235
+        canvas.drawPath(door, paint)
+        paint.color = bodyPurple(); paint.alpha = 255
+        canvas.drawCircle(fx + fw + fw * 0.52f, fy + fh * 0.48f, c.r * 0.075f, paint)
+    }
+
+    // ---------------- touch ----------------
+
+    private var joyPointer = -1
+    private var joyDx = 0f
+    private var joyDy = 0f
+    private val buttonPointers = HashMap<Int, Ctl>()
+    private var heldBits = 0
+
+    // edit gestures
+    private var bandRect: RectF? = null
+    private var bandStartX = 0f
+    private var bandStartY = 0f
+    private var dragIds: List<String> = emptyList()
+    private var lastX = 0f
+    private var lastY = 0f
+    private var editDragging = false
+
+    private fun clearTouchState() {
+        joyPointer = -1; joyDx = 0f; joyDy = 0f
+        buttonPointers.clear(); heldBits = 0
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (editMode) return editTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val idx = event.actionIndex
                 val id = event.getPointerId(idx)
                 val x = event.getX(idx)
                 val y = event.getY(idx)
-                val menuBtn = buttons.first { it.id == "menu" }
-                if (hypot(x - menuBtn.cx, y - menuBtn.cy) <= menuBtn.r * 1.6f) {
+                if (hypot(x - menuCtl.cx, y - menuCtl.cy) <= menuCtl.r * 1.6f) {
                     listener?.onMenuRequested()
                     return true
                 }
                 if (!controlsVisible) return false
-                if (hypot(x - joyCx, y - joyCy) <= joyR * 1.4f && joyPointer < 0) {
+                val joy = ctl("joystick")
+                if (hypot(x - joy.cx, y - joy.cy) <= joy.r * 1.4f && joyPointer < 0) {
                     joyPointer = id
                     updateJoy(x, y)
                     return true
                 }
-                val hit = buttons.firstOrNull {
-                    it.id != "menu" && hypot(x - it.cx, y - it.cy) <= it.r * 1.35f
+                val hit = editable.firstOrNull {
+                    it.id != "joystick" && hypot(x - it.cx, y - it.cy) <= it.r * 1.35f
                 }
                 if (hit != null) {
                     buttonPointers[id] = hit
@@ -174,8 +391,7 @@ class TouchOverlayView(context: Context) : View(context) {
                 if (!controlsVisible) return false
                 var handled = false
                 for (i in 0 until event.pointerCount) {
-                    val id = event.getPointerId(i)
-                    if (id == joyPointer) {
+                    if (event.getPointerId(i) == joyPointer) {
                         updateJoy(event.getX(i), event.getY(i))
                         handled = true
                     }
@@ -183,26 +399,20 @@ class TouchOverlayView(context: Context) : View(context) {
                 return handled || buttonPointers.isNotEmpty()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                val idx = event.actionIndex
-                val id = event.getPointerId(idx)
+                val id = event.getPointerId(event.actionIndex)
                 var handled = false
                 if (id == joyPointer) {
-                    joyPointer = -1
-                    joyDx = 0f
-                    joyDy = 0f
-                    pushState()
-                    invalidate()
+                    joyPointer = -1; joyDx = 0f; joyDy = 0f
+                    pushState(); invalidate()
                     handled = true
                 }
                 buttonPointers.remove(id)?.let {
                     heldBits = buttonPointers.values.fold(0) { acc, b -> acc or b.bit }
-                    pushState()
-                    invalidate()
+                    pushState(); invalidate()
                     handled = true
                 }
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                    joyPointer = -1; joyDx = 0f; joyDy = 0f
-                    buttonPointers.clear(); heldBits = 0
+                    clearTouchState()
                     pushState(); invalidate()
                 }
                 return handled
@@ -211,18 +421,90 @@ class TouchOverlayView(context: Context) : View(context) {
         return false
     }
 
+    private fun editTouch(event: MotionEvent): Boolean {
+        val x = event.x
+        val y = event.y
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                editDragging = false
+                lastX = x; lastY = y
+                val hit = editable.firstOrNull { hypot(x - it.cx, y - it.cy) <= max(it.r * 1.25f, 40f) }
+                if (hit != null) {
+                    // dragging a selected control moves the whole selection;
+                    // an unselected one becomes the sole selection
+                    if (hit.id !in selection) {
+                        selection.clear()
+                        selection.add(hit.id)
+                        notifySelection()
+                    }
+                    dragIds = selection.toList()
+                    bandRect = null
+                } else {
+                    dragIds = emptyList()
+                    bandStartX = x; bandStartY = y
+                    bandRect = RectF(x, y, x, y)
+                }
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = x - lastX
+                val dy = y - lastY
+                if (!editDragging && hypot(dx, dy) > 6f) editDragging = true
+                if (dragIds.isNotEmpty()) {
+                    for (id in dragIds) {
+                        val c = ctl(id)
+                        val o = ensureOverride(id)
+                        o.cxF = ((c.cx + dx).coerceIn(c.r, width - c.r)) / width
+                        o.cyF = ((c.cy + dy).coerceIn(c.r, height - c.r)) / height
+                    }
+                    relayout()
+                    listener?.onEditLayoutDirty()
+                } else {
+                    bandRect?.set(
+                        min(bandStartX, x), min(bandStartY, y),
+                        max(bandStartX, x), max(bandStartY, y)
+                    )
+                }
+                lastX = x; lastY = y
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                bandRect?.let { band ->
+                    if (editDragging) {
+                        selection.clear()
+                        for (c in editable) if (band.contains(c.cx, c.cy)) selection.add(c.id)
+                    } else {
+                        selection.clear()  // plain tap on empty space deselects
+                    }
+                    notifySelection()
+                }
+                bandRect = null
+                dragIds = emptyList()
+                invalidate()
+                return true
+            }
+        }
+        return true
+    }
+
     private fun updateJoy(x: Float, y: Float) {
-        var dx = (x - joyCx) / joyR
-        var dy = (y - joyCy) / joyR
+        val j = ctl("joystick")
+        var dx = (x - j.cx) / j.r
+        var dy = (y - j.cy) / j.r
         val len = hypot(dx, dy)
         if (len > 1f) { dx /= len; dy /= len }
-        joyDx = dx
-        joyDy = dy
+        joyDx = dx; joyDy = dy
         pushState()
         invalidate()
     }
 
     private fun pushState() {
+        if (editMode) {
+            listener?.onTouchInput(0, 0, 0)
+            return
+        }
         val jx = (joyDx * 5f).roundToInt().coerceIn(-5, 5)
         val jy = (-joyDy * 5f).roundToInt().coerceIn(-5, 5)
         listener?.onTouchInput(jx, jy, heldBits)
