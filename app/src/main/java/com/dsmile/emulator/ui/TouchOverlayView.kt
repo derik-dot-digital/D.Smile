@@ -96,13 +96,14 @@ class TouchOverlayView(context: Context) : View(context) {
             ctl(id).apply { defCx = cx; defCy = cy; defR = r }
         }
         def("joystick", 22f * u, h - 24f * u, 16f * u)
-        val bx = w - 22f * u
+        val bx = w - 21f * u
         val by = h - 58f * u
-        def("red", bx, by - 11f * u, 7f * u)
-        def("yellow", bx + 11f * u, by, 7f * u)
-        def("green", bx, by + 11f * u, 7f * u)
-        def("blue", bx - 11f * u, by, 7f * u)
-        def("enter", bx, h - 24f * u, 9f * u)
+        // 12u spread: adjacent silver bezels (1.16r) just clear each other
+        def("red", bx, by - 12f * u, 7f * u)
+        def("yellow", bx + 12f * u, by, 7f * u)
+        def("green", bx, by + 12f * u, 7f * u)
+        def("blue", bx - 12f * u, by, 7f * u)
+        def("enter", bx, h - 22f * u, 9f * u)
         def("help", 12f * u, h - 80f * u, 5f * u)
         def("abc", 12f * u, h - 66f * u, 5f * u)
         def("exit", 12f * u, h - 52f * u, 5f * u)
