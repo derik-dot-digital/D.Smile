@@ -265,15 +265,18 @@ class TouchOverlayView(context: Context) : View(context) {
             }
             "exit" -> drawExit(canvas, c, alpha)
             "abc" -> {
+                // dense pill with a thick outline, like the real ABC key
+                val pill = RectF(c.cx - c.r * 1.12f, c.cy - c.r * 0.60f, c.cx + c.r * 1.12f, c.cy + c.r * 0.60f)
                 paint.color = bodyPurple(); paint.alpha = alpha
-                val oval = RectF(c.cx - c.r * 1.25f, c.cy - c.r * 0.75f, c.cx + c.r * 1.25f, c.cy + c.r * 0.75f)
-                canvas.drawOval(oval, paint)
+                canvas.drawRoundRect(pill, c.r * 0.60f, c.r * 0.60f, paint)
                 stroke.color = Color.WHITE; stroke.alpha = alpha
-                stroke.strokeWidth = c.r * 0.09f
-                canvas.drawOval(oval, stroke)
-                textPaint.textSize = c.r * 0.75f
+                stroke.strokeWidth = c.r * 0.16f
+                canvas.drawRoundRect(pill, c.r * 0.60f, c.r * 0.60f, stroke)
+                textPaint.textSize = c.r * 0.68f
                 textPaint.color = Color.WHITE; textPaint.alpha = 255
-                canvas.drawText("abc", c.cx, c.cy + c.r * 0.28f, textPaint)
+                textPaint.isFakeBoldText = true
+                canvas.drawText("abc", c.cx, c.cy + c.r * 0.24f, textPaint)
+                textPaint.isFakeBoldText = false
             }
         }
     }
@@ -286,51 +289,56 @@ class TouchOverlayView(context: Context) : View(context) {
         canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
 
         val ink = dialText()
+        // checkmark, symmetric about the dial center, sitting just above ENTER
         stroke.color = ink; stroke.alpha = 255
         stroke.strokeWidth = c.r * 0.13f
         stroke.strokeCap = Paint.Cap.ROUND
         val check = Path().apply {
-            moveTo(c.cx - c.r * 0.22f, c.cy - c.r * 0.10f)
-            lineTo(c.cx - c.r * 0.04f, c.cy + c.r * 0.10f)
-            lineTo(c.cx + c.r * 0.30f, c.cy - c.r * 0.38f)
+            moveTo(c.cx - c.r * 0.24f, c.cy - c.r * 0.10f)
+            lineTo(c.cx - c.r * 0.06f, c.cy + c.r * 0.08f)
+            lineTo(c.cx + c.r * 0.24f, c.cy - c.r * 0.36f)
         }
         canvas.drawPath(check, stroke)
         stroke.strokeCap = Paint.Cap.BUTT
-        // "ENTER" curved along the bottom of the dial, letter tops toward center
-        val arcR = c.r * 0.60f
+        // "ENTER" curved along the bottom of the dial, letter tops toward center;
+        // explicit tracking, since arc text bunches up without it
+        val arcR = c.r * 0.64f
         val arc = Path().apply {
-            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 150f, -120f)
+            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 155f, -130f)
         }
-        textPaint.textSize = c.r * 0.30f
+        textPaint.textSize = c.r * 0.27f
         textPaint.color = ink; textPaint.alpha = 255
         textPaint.isFakeBoldText = true
+        textPaint.letterSpacing = 0.22f
         val half = PathMeasure(arc, false).length / 2f
         canvas.drawTextOnPath("ENTER", arc, half, 0f, textPaint)
+        textPaint.letterSpacing = 0f
         textPaint.isFakeBoldText = false
     }
 
     private fun drawExit(canvas: Canvas, c: Ctl, alpha: Int) {
         paint.color = bodyPurple(); paint.alpha = alpha
         canvas.drawCircle(c.cx, c.cy, c.r, paint)
-        // open door: frame outline + door leaf swung outward + knob
-        val fw = c.r * 0.62f
-        val fh = c.r * 0.94f
-        val fx = c.cx - fw * 0.72f
-        val fy = c.cy - fh / 2f
+        // door frame (outline) with the door leaf swung open toward the viewer,
+        // hinged on the left jamb, knob on the leaf
+        val fL = c.cx - c.r * 0.10f
+        val fR = c.cx + c.r * 0.44f
+        val fT = c.cy - c.r * 0.46f
+        val fB = c.cy + c.r * 0.46f
         stroke.color = Color.WHITE; stroke.alpha = 255
-        stroke.strokeWidth = c.r * 0.10f
-        canvas.drawRect(fx, fy, fx + fw, fy + fh, stroke)
-        val door = Path().apply {
-            moveTo(fx + fw, fy)
-            lineTo(fx + fw + fw * 0.78f, fy - fh * 0.14f)
-            lineTo(fx + fw + fw * 0.78f, fy + fh * 0.94f)
-            lineTo(fx + fw, fy + fh)
+        stroke.strokeWidth = c.r * 0.11f
+        canvas.drawRoundRect(RectF(fL, fT, fR, fB), c.r * 0.06f, c.r * 0.06f, stroke)
+        val leaf = Path().apply {
+            moveTo(fL, fT)                                  // hinge top
+            lineTo(c.cx - c.r * 0.56f, fT - c.r * 0.12f)    // swung-out top
+            lineTo(c.cx - c.r * 0.56f, fB + c.r * 0.12f)    // swung-out bottom
+            lineTo(fL, fB)                                  // hinge bottom
             close()
         }
-        paint.color = Color.WHITE; paint.alpha = 235
-        canvas.drawPath(door, paint)
+        paint.color = Color.WHITE; paint.alpha = 240
+        canvas.drawPath(leaf, paint)
         paint.color = bodyPurple(); paint.alpha = 255
-        canvas.drawCircle(fx + fw + fw * 0.52f, fy + fh * 0.48f, c.r * 0.075f, paint)
+        canvas.drawCircle(c.cx - c.r * 0.47f, c.cy, c.r * 0.07f, paint)
     }
 
     // ---------------- touch ----------------
