@@ -27,8 +27,11 @@ class MainActivity : Activity() {
 
     private companion object {
         const val REQ_PICK_FOLDER = 1
+        const val REQ_PICK_BIOS = 2
         val ROM_EXTENSIONS = setOf("bin", "rom", "vsmile")
     }
+
+    private val biosFile get() = java.io.File(filesDir, "sysrom.bin")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,11 +57,16 @@ class MainActivity : Activity() {
             text = "ROM folder…"
             setOnClickListener { pickFolder() }
         }
+        val biosBtn = Button(this).apply {
+            text = "BIOS…"
+            setOnClickListener { biosOptions() }
+        }
         val settingsBtn = Button(this).apply {
             text = "Settings"
             setOnClickListener { showSettings() }
         }
         buttonRow.addView(pickBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        buttonRow.addView(biosBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         buttonRow.addView(settingsBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1)
@@ -91,6 +99,88 @@ class MainActivity : Activity() {
             prefs.edit().putString("romFolder", uri.toString()).apply()
             scanRoms()
         }
+        if (requestCode == REQ_PICK_BIOS && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            importBios(uri)
+        }
+    }
+
+    // ---------------- BIOS import ----------------
+
+    private fun biosOptions() {
+        if (!biosFile.exists()) {
+            pickBiosFile()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("BIOS (imported)")
+            .setItems(arrayOf("Replace…", "Remove")) { _, i ->
+                when (i) {
+                    0 -> pickBiosFile()
+                    1 -> {
+                        biosFile.delete()
+                        Toast.makeText(this, "BIOS removed", Toast.LENGTH_SHORT).show()
+                        scanRoms()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun pickBiosFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        startActivityForResult(intent, REQ_PICK_BIOS)
+    }
+
+    private fun importBios(uri: Uri) {
+        val bytes = try {
+            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } catch (e: Exception) { null }
+        if (bytes == null) {
+            Toast.makeText(this, "Could not read that file", Toast.LENGTH_LONG).show()
+            return
+        }
+        val (valid, swapped) = validateBios(bytes)
+        if (valid == null) {
+            Toast.makeText(
+                this,
+                "Not a valid V.Smile BIOS (expected a 2 MiB sysrom dump with sane boot vectors)",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        biosFile.writeBytes(valid)
+        val note = if (swapped) " (byte order corrected)" else ""
+        Toast.makeText(this, "BIOS imported$note", Toast.LENGTH_LONG).show()
+        scanRoms()
+    }
+
+    /** Validates a sysrom dump: correct size, and the interrupt vector table at
+     *  words 0xFFF5-0xFFFF must decode to plausible code addresses. Accepts
+     *  either byte order and returns (fixed-LE data or null, wasByteSwapped). */
+    private fun validateBios(data: ByteArray): Pair<ByteArray?, Boolean> {
+        if (data.size != 0x200000) return null to false
+        fun score(swap: Boolean): Int {
+            var ok = 0
+            for (w in 0xFFF5..0xFFFF) {
+                val i = w * 2
+                val lo = if (swap) data[i + 1] else data[i]
+                val hi = if (swap) data[i] else data[i + 1]
+                val v = (lo.toInt() and 0xFF) or ((hi.toInt() and 0xFF) shl 8)
+                if (v in 0x0100..0xFFF0) ok++
+            }
+            return ok
+        }
+        val le = score(false)
+        val be = score(true)
+        return when {
+            le >= 9 && le >= be -> data to false
+            be >= 9 -> ByteArray(data.size) { i -> if (i % 2 == 0) data[i + 1] else data[i - 1] } to true
+            else -> null to false
+        }
     }
 
     private fun scanRoms() {
@@ -121,7 +211,7 @@ class MainActivity : Activity() {
         prefs.edit().putString("sysromUri", sysromUri).apply()
         roms.sortBy { it.name.lowercase() }
         for (r in roms) adapter.add(r.name)
-        val bios = if (sysromUri != null) " • BIOS found (real intro available)" else ""
+        val bios = when { biosFile.exists() -> " • BIOS imported"; sysromUri != null -> " • BIOS found in folder"; else -> "" }
         statusText.text = "${roms.size} game(s)$bios"
         if (roms.isEmpty()) {
             Toast.makeText(this, "No .bin ROMs found in that folder", Toast.LENGTH_LONG).show()

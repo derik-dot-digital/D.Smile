@@ -150,6 +150,11 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     }
 
     private fun loadSysromBytes(): ByteArray? {
+        // Imported BIOS (validated, app-internal) wins; ROM-folder detection is the fallback.
+        val imported = File(filesDir, "sysrom.bin")
+        if (imported.exists()) {
+            return try { imported.readBytes() } catch (e: Exception) { null }
+        }
         val uriStr = prefs.getString("sysromUri", null) ?: return null
         return try {
             readUri(Uri.parse(uriStr))
