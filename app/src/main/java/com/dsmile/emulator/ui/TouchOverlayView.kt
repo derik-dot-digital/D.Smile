@@ -317,18 +317,24 @@ class TouchOverlayView(context: Context) : View(context) {
         canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
 
         val ink = dialText()
-        // checkmark, centered in the dial (bounding box symmetric about cx/cy)
-        stroke.color = ink; stroke.alpha = 255
-        stroke.strokeWidth = c.r * 0.15f
-        stroke.strokeCap = Paint.Cap.ROUND
-        // wide sweeping check: short steep leg into a low vee, long leg up-right
+        // Sweeping check as a FILLED shape: flat chisel cut on the short end,
+        // long stroke tapering into a slightly curved point at the tip.
+        fun px(x: Float, y: Float) = floatArrayOf(c.cx + c.r * x, c.cy + c.r * y)
+        val s1 = px(-0.37f, -0.08f)   // flat-cut corner (outer)
+        val s2 = px(-0.23f, -0.16f)   // flat-cut corner (inner)
+        val vi = px(-0.09f, 0.04f)    // inner vee
+        val vo = px(-0.06f, 0.30f)    // outer vee
+        val tip = px(0.36f, -0.30f)   // pointed tip
         val check = Path().apply {
-            moveTo(c.cx - c.r * 0.28f, c.cy - c.r * 0.08f)
-            lineTo(c.cx - c.r * 0.10f, c.cy + c.r * 0.26f)
-            lineTo(c.cx + c.r * 0.34f, c.cy - c.r * 0.34f)
+            moveTo(s2[0], s2[1])
+            lineTo(vi[0], vi[1])
+            quadTo(c.cx + c.r * 0.16f, c.cy - c.r * 0.16f, tip[0], tip[1])  // upper edge, slight curve
+            quadTo(c.cx + c.r * 0.14f, c.cy - 0.02f * c.r, vo[0], vo[1])    // lower edge back
+            lineTo(s1[0], s1[1])
+            close()
         }
-        canvas.drawPath(check, stroke)
-        stroke.strokeCap = Paint.Cap.BUTT
+        paint.color = ink; paint.alpha = 255
+        canvas.drawPath(check, paint)
         // "ENTER" along the bottom rim: each glyph positioned and rotated by
         // plain trigonometry - no path APIs, so spacing is exact everywhere.
         val arcR = c.r * 0.70f
