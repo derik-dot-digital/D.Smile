@@ -81,6 +81,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             controlOpacity = prefs.getFloat("opacity", 0.55f)
             controlsVisible = prefs.getBoolean("touchControls", true)
             pinkTheme = prefs.getBoolean("pinkTheme", false)
+            joySwap = prefs.getBoolean("joySwap", false)
         }
         rootLayout = FrameLayout(this)
         rootLayout.addView(glView)
@@ -282,6 +283,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Controls layout…",
             "Edit controls layout",
             "Controller theme: ${if (overlay.pinkTheme) "Pink" else "Classic"}",
+            "Joystick colors: ${if (overlay.joySwap) "Swapped" else "Normal"}",
             if (overlay.controlsVisible) "Hide touch controls" else "Show touch controls",
             "Controls opacity…",
             "Shader…",
@@ -323,20 +325,24 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         prefs.edit().putBoolean("pinkTheme", overlay.pinkTheme).apply()
                     }
                     8 -> {
+                        overlay.joySwap = !overlay.joySwap
+                        prefs.edit().putBoolean("joySwap", overlay.joySwap).apply()
+                    }
+                    9 -> {
                         overlay.controlsVisible = !overlay.controlsVisible
                         prefs.edit().putBoolean("touchControls", overlay.controlsVisible).apply()
                     }
-                    9 -> showOpacityDialog()
-                    10 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
+                    10 -> showOpacityDialog()
+                    11 -> pickChoice("Shader", ShaderMode.entries.map { it.name }, renderer.shaderMode.ordinal) {
                         renderer.shaderMode = ShaderMode.entries[it]
                         prefs.edit().putString("shader", renderer.shaderMode.name).apply()
                     }
-                    11 -> showCrtOptions()
-                    12 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
+                    12 -> showCrtOptions()
+                    13 -> pickChoice("Aspect ratio", AspectMode.entries.map { it.name }, renderer.aspectMode.ordinal) {
                         renderer.aspectMode = AspectMode.entries[it]
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
-                    13 -> pickChoice(
+                    14 -> pickChoice(
                         "Background",
                         listOf("Black", "V.Smile Blue", "V.Smile Purple"),
                         renderer.backgroundMode.ordinal
@@ -344,7 +350,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.backgroundMode = BackgroundMode.entries[it]
                         prefs.edit().putString("background", renderer.backgroundMode.name).apply()
                     }
-                    14 -> pickChoice(
+                    15 -> pickChoice(
                         "Bezel",
                         listOf("None", "Silver", "Black"),
                         renderer.bezelMode.ordinal
@@ -352,10 +358,10 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.bezelMode = BezelMode.entries[it]
                         prefs.edit().putString("bezel", renderer.bezelMode.name).apply()
                     }
-                    15 -> startBindingWizard()
-                    16 -> showTriggerDialog()
-                    17 -> NativeCore.nativeReset()
-                    18 -> confirmQuit()
+                    16 -> startBindingWizard()
+                    17 -> showTriggerDialog()
+                    18 -> NativeCore.nativeReset()
+                    19 -> confirmQuit()
                 }
             }
             .setOnDismissListener {

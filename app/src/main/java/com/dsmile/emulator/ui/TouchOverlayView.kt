@@ -44,6 +44,8 @@ class TouchOverlayView(context: Context) : View(context) {
         set(v) { if (field != v) { field = v; invalidate() } }
     var pinkTheme = false
         set(v) { field = v; invalidate() }
+    var joySwap = false
+        set(v) { field = v; invalidate() }
     var editMode = false
         set(v) {
             field = v
@@ -219,13 +221,20 @@ class TouchOverlayView(context: Context) : View(context) {
         }
     }
 
+    private fun darken(color: Int): Int = Color.rgb(
+        (Color.red(color) * 0.80f).toInt(), (Color.green(color) * 0.80f).toInt(),
+        (Color.blue(color) * 0.80f).toInt()
+    )
+
     private fun drawJoystick(canvas: Canvas, a: Int) {
         val j = ctl("joystick")
-        paint.color = dishColor(); paint.alpha = a
+        val dish = if (joySwap) ballColor() else dishColor()
+        val ball = if (joySwap) dishColor() else ballColor()
+        paint.color = dish; paint.alpha = a
         canvas.drawCircle(j.cx, j.cy, j.r, paint)
-        paint.color = dishInner(); paint.alpha = (a * 0.6f).toInt()
+        paint.color = darken(dish); paint.alpha = (a * 0.6f).toInt()
         canvas.drawCircle(j.cx, j.cy, j.r * 0.62f, paint)
-        paint.color = ballColor(); paint.alpha = a
+        paint.color = ball; paint.alpha = a
         canvas.drawCircle(j.cx + joyDx * j.r * 0.55f, j.cy + joyDy * j.r * 0.55f, j.r * 0.42f, paint)
     }
 
