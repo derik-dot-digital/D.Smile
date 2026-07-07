@@ -109,7 +109,17 @@ class MainActivity : Activity() {
 
     private fun biosOptions() {
         if (!biosFile.exists()) {
-            pickBiosFile()
+            AlertDialog.Builder(this)
+                .setTitle("BIOS (optional)")
+                .setMessage(
+                    "A BIOS is NOT required - games boot and play without one.\n\n" +
+                    "Importing a real V.Smile sysrom dump improves compatibility with " +
+                    "games that call built-in console routines. You can add or remove " +
+                    "one at any time."
+                )
+                .setPositiveButton("Import…") { _, _ -> pickBiosFile() }
+                .setNegativeButton("Not now", null)
+                .show()
             return
         }
         AlertDialog.Builder(this)
@@ -211,7 +221,7 @@ class MainActivity : Activity() {
         prefs.edit().putString("sysromUri", sysromUri).apply()
         roms.sortBy { it.name.lowercase() }
         for (r in roms) adapter.add(r.name)
-        val bios = when { biosFile.exists() -> " • BIOS imported"; sysromUri != null -> " • BIOS found in folder"; else -> "" }
+        val bios = when { biosFile.exists() -> " • BIOS imported"; sysromUri != null -> " • BIOS found in folder"; else -> " • no BIOS (optional)" }
         statusText.text = "${roms.size} game(s)$bios"
         if (roms.isEmpty()) {
             Toast.makeText(this, "No .bin ROMs found in that folder", Toast.LENGTH_LONG).show()
