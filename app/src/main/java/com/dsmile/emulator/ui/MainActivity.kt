@@ -39,7 +39,7 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
         }
         val title = TextView(this).apply {
-            text = "D-Smile"
+            text = "D.Smile"
             textSize = 28f
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, 0, 0, pad / 2)

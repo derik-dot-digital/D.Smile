@@ -1,4 +1,4 @@
-# Launching D-Smile from iiSU (and other frontends)
+# Launching D.Smile from iiSU (and other frontends)
 
 ## What to add to your iiSU systems file
 
@@ -20,14 +20,14 @@ V.Smile system if you already have one):
   "emulators": [
     {
       "id": "DSMILE",
-      "name": "D-Smile (Standalone)",
+      "name": "D.Smile (Standalone)",
       "routeType": "path",
       "packages": [
         "com.dsmile.emulator"
       ],
       "commands": [
         {
-          "description": "D-Smile",
+          "description": "D.Smile",
           "command": "%PACKAGE%/.ui.EmuActivity -a com.dsmile.emulator.LAUNCH_GAME -e rom %ROM% --activity-clear-top"
         }
       ]
@@ -36,8 +36,8 @@ V.Smile system if you already have one):
 }
 ```
 
-**Important:** because `routeType: "path"` hands D-Smile a raw file path, open
-D-Smile once → Settings → "All files access" and grant it. Without that,
+**Important:** because `routeType: "path"` hands D.Smile a raw file path, open
+D.Smile once → Settings → "All files access" and grant it. Without that,
 Android blocks reading ROMs outside the app's own folders on Android 11+.
 
 ## The intent contract (for any frontend)

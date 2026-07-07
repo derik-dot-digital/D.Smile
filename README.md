@@ -1,4 +1,4 @@
-# D-Smile
+# D.Smile
 
 A from-scratch VTech V.Smile emulator for Android.
 
@@ -37,6 +37,6 @@ Boots the ROM headless, dumps framebuffer BMPs, and verifies save-state determin
 
 Behavior was researched from [veesem](https://github.com/sp1187/veesem) (ISC),
 [VFrown](https://github.com/Schnert0/VFrown), MAME's unSP/SPG2xx cores, and
-[vdream](https://github.com/fodsoft/vdream) — see `docs/research/`. All D-Smile
+[vdream](https://github.com/fodsoft/vdream) — see `docs/research/`. All D.Smile
 code is original; the SPG200 register-level behavior follows those references,
 with veesem serving as the primary behavioral model.

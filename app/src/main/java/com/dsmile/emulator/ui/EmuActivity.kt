@@ -263,7 +263,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             packageManager.getPackageInfo(packageName, 0).versionName
         } catch (e: Exception) { "?" }
         AlertDialog.Builder(this)
-            .setTitle("${romName.substringBeforeLast('.')}  —  D-Smile v$version")
+            .setTitle("${romName.substringBeforeLast('.')}  —  D.Smile v$version")
             .setItems(items) { _, which ->
                 when (which) {
                     1 -> pickSlot("Save to slot") { saveState(it) }

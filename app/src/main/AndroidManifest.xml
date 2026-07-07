@@ -9,7 +9,7 @@
         tools:ignore="ScopedStorage" />
 
     <application
-        android:label="D-Smile"
+        android:label="D.Smile"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.DSmile"
         android:isGame="true"
