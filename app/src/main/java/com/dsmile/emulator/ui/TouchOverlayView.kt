@@ -73,8 +73,8 @@ class TouchOverlayView(context: Context) : View(context) {
         joyCy = h - joyR - 8f * u
 
         val br = 7f * u
-        val bx = w - 26f * u
-        val by = h - 52f * u  // color cluster raised
+        val bx = w - 24f * u  // rightmost button edge sits 6u from the screen edge, like the joystick on the left
+        val by = h - 56f * u  // color cluster raised
         fun place(id: String, cx: Float, cy: Float, r: Float) {
             buttons.first { it.id == id }.apply { this.cx = cx; this.cy = cy; this.r = r }
         }
