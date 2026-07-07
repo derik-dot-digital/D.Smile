@@ -95,8 +95,8 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             return
         }
         val pal = intent.getBooleanExtra("pal", prefs.getBoolean("pal", false))
-        val sysrom = if (prefs.getBoolean("playIntro", true)) loadSysromBytes() else null
-        if (!NativeCore.nativeInit(rom, sysrom, pal)) {
+        val sysrom = loadSysromBytes()  // always load when available (games call BIOS routines)
+        if (!NativeCore.nativeInit(rom, sysrom, pal, prefs.getBoolean("playIntro", true))) {
             Toast.makeText(this, "Failed to initialize emulator", Toast.LENGTH_LONG).show()
             finish()
             return

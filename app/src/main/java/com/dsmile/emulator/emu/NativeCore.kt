@@ -5,7 +5,7 @@ object NativeCore {
         System.loadLibrary("dsmile")
     }
 
-    external fun nativeInit(cart: ByteArray, sysrom: ByteArray?, pal: Boolean): Boolean
+    external fun nativeInit(cart: ByteArray, sysrom: ByteArray?, pal: Boolean, playIntro: Boolean): Boolean
     external fun nativeStart()
     external fun nativeStop()
     external fun nativeDestroy()

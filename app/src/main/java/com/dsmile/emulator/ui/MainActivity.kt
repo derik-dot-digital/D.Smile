@@ -112,7 +112,7 @@ class MainActivity : Activity() {
             val ext = name.substringAfterLast('.', "").lowercase()
             if (ext !in ROM_EXTENSIONS) continue
             val base = name.lowercase()
-            if ("bios" in base || "sysrom" in base || "system rom" in base) {
+            if ("bios" in base || "sysrom" in base || "system rom" in base || base.startsWith("vsmile_v")) {
                 sysromUri = f.uri.toString()
                 continue
             }
@@ -142,7 +142,7 @@ class MainActivity : Activity() {
         val intro = prefs.getBoolean("playIntro", true)
         val items = arrayOf(
             "Video system: ${if (pal) "PAL (50 Hz)" else "NTSC (60 Hz)"}",
-            "V.Smile boot intro: ${if (intro) "on (needs BIOS in ROM folder)" else "off"}",
+            "Game intros: ${if (intro) "on" else "skipped (fast boot)"}",
             "All files access (for frontends like iiSU)…"
         )
         AlertDialog.Builder(this)

@@ -31,10 +31,12 @@ constexpr int kRingFrames = 6144;
 
 class Emulator {
  public:
-  bool Init(const u8* cart, size_t cart_size, const u8* sysrom, size_t sysrom_size, bool pal) {
+  bool Init(const u8* cart, size_t cart_size, const u8* sysrom, size_t sysrom_size, bool pal,
+            bool play_intro) {
     vs_ = std::make_unique<VSmile>();
     if (!vs_->LoadCart(cart, cart_size)) return false;
     if (sysrom && sysrom_size > 0) vs_->LoadSysrom(sysrom, sysrom_size);
+    vs_->SetVtechLogo(play_intro);
     pal_ = pal;
     vs_->Reset(pal);
     frames_per_second_ = pal ? 50.08 : 60.05;
@@ -305,12 +307,13 @@ extern "C" {
 
 JNIEXPORT jboolean JNICALL
 Java_com_dsmile_emulator_emu_NativeCore_nativeInit(JNIEnv* env, jobject, jbyteArray cart,
-                                                   jbyteArray sysrom, jboolean pal) {
+                                                   jbyteArray sysrom, jboolean pal,
+                                                   jboolean playIntro) {
   g_emu = std::make_unique<Emulator>();
   const auto cart_v = JBytes(env, cart);
   const auto sys_v = JBytes(env, sysrom);
   if (!g_emu->Init(cart_v.data(), cart_v.size(), sys_v.empty() ? nullptr : sys_v.data(),
-                   sys_v.size(), pal)) {
+                   sys_v.size(), pal, playIntro)) {
     g_emu.reset();
     return JNI_FALSE;
   }

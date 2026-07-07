@@ -308,6 +308,7 @@ bool VSmile::LoadState(const u8* data, size_t size) {
 }
 
 void VSmile::LoadSysrom(const u8* data, size_t size_bytes) {
+  has_real_sysrom_ = true;
   const size_t words = std::min<size_t>(size_bytes / 2, 0x100000);
   sysrom_.assign(0x100000, 0);
   for (size_t i = 0; i < words; i++) {
@@ -347,6 +348,8 @@ u16 VSmile::GpioIn(int port) {
     }
     default: {
       u16 v = (u16)(region_ & 0xF);
+      // Port C bit4: intro jumper. 1 = cart plays its branded intro,
+      // 0 = skip straight to the game menu (verified empirically).
       if (vtech_logo_) v |= 0x0010;
       v |= 0x0020;
       if (cts0_) v |= 0x0100;

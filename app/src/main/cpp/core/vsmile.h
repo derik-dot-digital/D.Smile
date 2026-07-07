@@ -110,6 +110,7 @@ class VSmile : public MachineIo {
   u32 cart_checksum_ = 0;
   int region_ = 0xF;        // US English
   bool vtech_logo_ = true;
+  bool has_real_sysrom_ = false;
   bool cts0_ = false, cts1_ = false;
   bool on_ = false, off_ = false, restart_ = false;
   int auto_on_frames_ = 0;  // simulated power-button pulse after reset

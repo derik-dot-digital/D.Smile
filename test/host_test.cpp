@@ -55,6 +55,19 @@ int main(int argc, char** argv) {
 
   static VSmile vs;
   if (!vs.LoadCart(rom.data(), rom.size())) { std::printf("LoadCart failed\n"); return 1; }
+  if (argc > 3) {
+    FILE* sf = fopen(argv[3], "rb");
+    if (sf) {
+      fseek(sf, 0, SEEK_END);
+      const long ss = ftell(sf);
+      fseek(sf, 0, SEEK_SET);
+      std::vector<u8> sys(ss);
+      fread(sys.data(), 1, ss, sf);
+      fclose(sf);
+      vs.LoadSysrom(sys.data(), sys.size());
+      std::printf("sysrom: %ld bytes loaded\n", ss);
+    }
+  }
   vs.Reset(false /*NTSC*/);
 
   std::vector<s16> audio(600000);
