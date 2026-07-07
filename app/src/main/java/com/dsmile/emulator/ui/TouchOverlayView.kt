@@ -221,6 +221,15 @@ class TouchOverlayView(context: Context) : View(context) {
         }
     }
 
+    // Brushed-silver vertical gradient matching the on-screen TV bezel shading:
+    // bright top with a specular band, falling to a darker base, cool tint.
+    private fun silverShader(cx: Float, cy: Float, r: Float) = android.graphics.LinearGradient(
+        cx, cy - r, cx, cy + r,
+        intArrayOf(0xFFEDF0F5.toInt(), 0xFFF7F9FD.toInt(), 0xFFBFC5CF.toInt(), 0xFF858B96.toInt()),
+        floatArrayOf(0f, 0.20f, 0.55f, 1f),
+        android.graphics.Shader.TileMode.CLAMP
+    )
+
     private fun darken(color: Int): Int = Color.rgb(
         (Color.red(color) * 0.80f).toInt(), (Color.green(color) * 0.80f).toInt(),
         (Color.blue(color) * 0.80f).toInt()
@@ -243,6 +252,11 @@ class TouchOverlayView(context: Context) : View(context) {
         val alpha = if (held) 255 else a
         when (c.id) {
             "red", "yellow", "blue", "green" -> {
+                // silver bezel ring (same shading as the screen bezel)
+                paint.shader = silverShader(c.cx, c.cy, c.r * 1.16f)
+                paint.alpha = alpha
+                canvas.drawCircle(c.cx, c.cy, c.r * 1.16f, paint)
+                paint.shader = null
                 paint.color = when (c.id) {
                     "red" -> Color.rgb(224, 58, 47)
                     "yellow" -> Color.rgb(245, 197, 24)
@@ -258,8 +272,8 @@ class TouchOverlayView(context: Context) : View(context) {
                 }
                 if ((leds and ledBit) != 0) {
                     stroke.color = Color.WHITE; stroke.alpha = 235
-                    stroke.strokeWidth = c.r * 0.18f
-                    canvas.drawCircle(c.cx, c.cy, c.r * 1.12f, stroke)
+                    stroke.strokeWidth = c.r * 0.16f
+                    canvas.drawCircle(c.cx, c.cy, c.r * 1.30f, stroke)
                 }
             }
             "enter" -> drawEnter(canvas, c, alpha)
@@ -293,9 +307,11 @@ class TouchOverlayView(context: Context) : View(context) {
     }
 
     private fun drawEnter(canvas: Canvas, c: Ctl, alpha: Int) {
-        // silver ring, colored dial, checkmark above curved ENTER text
-        paint.color = Color.rgb(196, 200, 208); paint.alpha = alpha
+        // silver ring (screen-bezel shading), colored dial, check + curved ENTER
+        paint.shader = silverShader(c.cx, c.cy, c.r)
+        paint.alpha = alpha
         canvas.drawCircle(c.cx, c.cy, c.r, paint)
+        paint.shader = null
         paint.color = dialColor(); paint.alpha = alpha
         canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
 
