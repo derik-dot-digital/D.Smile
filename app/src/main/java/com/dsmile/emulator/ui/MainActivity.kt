@@ -45,6 +45,12 @@ class MainActivity : Activity() {
             text = "D.Smile"
             textSize = 28f
             gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val versionText = TextView(this).apply {
+            text = try { "v" + packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
+            textSize = 12f
+            alpha = 0.6f
+            gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, 0, 0, pad / 2)
         }
         statusText = TextView(this).apply {
@@ -76,6 +82,7 @@ class MainActivity : Activity() {
         }
 
         root.addView(title)
+        root.addView(versionText)
         root.addView(statusText)
         root.addView(buttonRow)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
