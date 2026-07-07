@@ -317,20 +317,17 @@ class TouchOverlayView(context: Context) : View(context) {
         canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
 
         val ink = dialText()
-        // Sweeping check as a FILLED shape: flat chisel cut on the short end,
-        // long stroke tapering into a slightly curved point at the tip.
-        fun px(x: Float, y: Float) = floatArrayOf(c.cx + c.r * x, c.cy + c.r * y)
-        val s1 = px(-0.37f, -0.08f)   // flat-cut corner (outer)
-        val s2 = px(-0.23f, -0.16f)   // flat-cut corner (inner)
-        val vi = px(-0.09f, 0.04f)    // inner vee
-        val vo = px(-0.06f, 0.30f)    // outer vee
-        val tip = px(0.36f, -0.30f)   // pointed tip
+        // Sweeping check, user-approved geometry (see test/out/check_preview.ps1):
+        // tilted chisel cut, both legs bowing with the sweep, long stroke
+        // tapering to a curved point, optically centered.
+        fun X(v: Float) = c.cx + c.r * v
+        fun Y(v: Float) = c.cy + c.r * v
         val check = Path().apply {
-            moveTo(s2[0], s2[1])
-            lineTo(vi[0], vi[1])
-            quadTo(c.cx + c.r * 0.16f, c.cy - c.r * 0.16f, tip[0], tip[1])  // upper edge, slight curve
-            quadTo(c.cx + c.r * 0.14f, c.cy - 0.02f * c.r, vo[0], vo[1])    // lower edge back
-            lineTo(s1[0], s1[1])
+            moveTo(X(-0.196f), Y(-0.035f))                        // chisel inner corner
+            quadTo(X(-0.129f), Y(0.004f), X(-0.089f), Y(0.066f))  // short leg inner edge
+            quadTo(X(0.137f), Y(-0.144f), X(0.356f), Y(-0.211f))  // long upper edge to tip
+            quadTo(X(0.135f), Y(-0.098f), X(-0.097f), Y(0.211f))  // long lower edge to vee
+            quadTo(X(-0.162f), Y(0.109f), X(-0.256f), Y(0.024f))  // short leg outer edge
             close()
         }
         paint.color = ink; paint.alpha = 255
