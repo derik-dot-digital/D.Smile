@@ -70,11 +70,11 @@ class TouchOverlayView(context: Context) : View(context) {
         val u = min(w, h) / 100f  // layout unit
         joyR = 16f * u
         joyCx = joyR + 6f * u
-        joyCy = h - joyR - 8f * u
+        joyCy = h - joyR - 13f * u  // overlay lifted ~5% from the bottom
 
         val br = 7f * u
-        val bx = w - 24f * u  // rightmost button edge sits 6u from the screen edge, like the joystick on the left
-        val by = h - 56f * u  // color cluster raised
+        val bx = w - 22f * u  // clear of the drawn TV bezel on wide screens
+        val by = h - 63f * u  // color cluster raised
         fun place(id: String, cx: Float, cy: Float, r: Float) {
             buttons.first { it.id == id }.apply { this.cx = cx; this.cy = cy; this.r = r }
         }
@@ -83,12 +83,12 @@ class TouchOverlayView(context: Context) : View(context) {
         place("yellow", bx + 11f * u, by, br)
         place("green", bx, by + 11f * u, br)
         place("blue", bx - 11f * u, by, br)
-        // enter directly beneath the diamond
-        place("enter", bx, by + 30f * u, 9f * u)
+        // enter beneath the diamond, at the same height as the joystick
+        place("enter", bx, h - 29f * u, 9f * u)
         // small buttons stacked on the left, above the joystick
-        place("help", 12f * u, h - 80f * u, 5f * u)
-        place("abc", 12f * u, h - 66f * u, 5f * u)
-        place("exit", 12f * u, h - 52f * u, 5f * u)
+        place("help", 12f * u, h - 85f * u, 5f * u)
+        place("abc", 12f * u, h - 71f * u, 5f * u)
+        place("exit", 12f * u, h - 57f * u, 5f * u)
         place("menu", w - 8f * u, 6f * u, 5f * u)
     }
 
