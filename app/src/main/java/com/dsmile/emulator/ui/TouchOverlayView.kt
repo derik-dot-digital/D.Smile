@@ -270,12 +270,12 @@ class TouchOverlayView(context: Context) : View(context) {
                 paint.color = bodyPurple(); paint.alpha = alpha
                 canvas.drawRoundRect(pill, c.r * 0.60f, c.r * 0.60f, paint)
                 stroke.color = Color.WHITE; stroke.alpha = alpha
-                stroke.strokeWidth = c.r * 0.16f
+                stroke.strokeWidth = c.r * 0.22f
                 canvas.drawRoundRect(pill, c.r * 0.60f, c.r * 0.60f, stroke)
-                textPaint.textSize = c.r * 0.68f
+                textPaint.textSize = c.r * 0.62f
                 textPaint.color = Color.WHITE; textPaint.alpha = 255
                 textPaint.isFakeBoldText = true
-                canvas.drawText("abc", c.cx, c.cy + c.r * 0.24f, textPaint)
+                canvas.drawText("ABC", c.cx, c.cy + c.r * 0.22f, textPaint)
                 textPaint.isFakeBoldText = false
             }
         }
@@ -289,56 +289,59 @@ class TouchOverlayView(context: Context) : View(context) {
         canvas.drawCircle(c.cx, c.cy, c.r * 0.86f, paint)
 
         val ink = dialText()
-        // checkmark, symmetric about the dial center, sitting just above ENTER
+        // checkmark, centered in the dial (bounding box symmetric about cx/cy)
         stroke.color = ink; stroke.alpha = 255
         stroke.strokeWidth = c.r * 0.13f
         stroke.strokeCap = Paint.Cap.ROUND
         val check = Path().apply {
-            moveTo(c.cx - c.r * 0.24f, c.cy - c.r * 0.10f)
-            lineTo(c.cx - c.r * 0.06f, c.cy + c.r * 0.08f)
-            lineTo(c.cx + c.r * 0.24f, c.cy - c.r * 0.36f)
+            moveTo(c.cx - c.r * 0.24f, c.cy + c.r * 0.02f)
+            lineTo(c.cx - c.r * 0.06f, c.cy + c.r * 0.22f)
+            lineTo(c.cx + c.r * 0.24f, c.cy - c.r * 0.22f)
         }
         canvas.drawPath(check, stroke)
         stroke.strokeCap = Paint.Cap.BUTT
-        // "ENTER" curved along the bottom of the dial, letter tops toward center;
-        // explicit tracking, since arc text bunches up without it
-        val arcR = c.r * 0.64f
+        // "ENTER" along the bottom rim: placed character by character so the
+        // spread is deterministic (single-string arc text bunches on devices).
+        val arcR = c.r * 0.70f
         val arc = Path().apply {
-            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 155f, -130f)
+            addArc(RectF(c.cx - arcR, c.cy - arcR, c.cx + arcR, c.cy + arcR), 160f, -140f)
         }
-        textPaint.textSize = c.r * 0.27f
+        textPaint.textSize = c.r * 0.26f
         textPaint.color = ink; textPaint.alpha = 255
         textPaint.isFakeBoldText = true
-        textPaint.letterSpacing = 0.22f
-        val half = PathMeasure(arc, false).length / 2f
-        canvas.drawTextOnPath("ENTER", arc, half, 0f, textPaint)
-        textPaint.letterSpacing = 0f
+        val word = "ENTER"
+        val arcLen = PathMeasure(arc, false).length
+        val slot = arcLen / (word.length + 1)
+        for (i in word.indices) {
+            canvas.drawTextOnPath(word[i].toString(), arc, slot * (i + 1), 0f, textPaint)
+        }
         textPaint.isFakeBoldText = false
     }
 
     private fun drawExit(canvas: Canvas, c: Ctl, alpha: Int) {
         paint.color = bodyPurple(); paint.alpha = alpha
         canvas.drawCircle(c.cx, c.cy, c.r, paint)
-        // door frame (outline) with the door leaf swung open toward the viewer,
-        // hinged on the left jamb, knob on the leaf
-        val fL = c.cx - c.r * 0.10f
-        val fR = c.cx + c.r * 0.44f
+        // doorway (outline) with the door leaf swung open to the RIGHT,
+        // overlapping the opening; its right edge sags down, leaving slivers
+        // of the doorway visible along the top and right
+        val fL = c.cx - c.r * 0.34f
+        val fR = c.cx + c.r * 0.34f
         val fT = c.cy - c.r * 0.46f
         val fB = c.cy + c.r * 0.46f
         stroke.color = Color.WHITE; stroke.alpha = 255
-        stroke.strokeWidth = c.r * 0.11f
-        canvas.drawRoundRect(RectF(fL, fT, fR, fB), c.r * 0.06f, c.r * 0.06f, stroke)
+        stroke.strokeWidth = c.r * 0.10f
+        canvas.drawRoundRect(RectF(fL, fT, fR, fB), c.r * 0.05f, c.r * 0.05f, stroke)
         val leaf = Path().apply {
-            moveTo(fL, fT)                                  // hinge top
-            lineTo(c.cx - c.r * 0.56f, fT - c.r * 0.12f)    // swung-out top
-            lineTo(c.cx - c.r * 0.56f, fB + c.r * 0.12f)    // swung-out bottom
-            lineTo(fL, fB)                                  // hinge bottom
+            moveTo(fL, fT + c.r * 0.04f)               // hinge top (left jamb)
+            lineTo(fR - c.r * 0.14f, fT + c.r * 0.16f) // right edge, dropped
+            lineTo(fR - c.r * 0.14f, fB + c.r * 0.10f) // right edge, below frame
+            lineTo(fL, fB)                             // hinge bottom
             close()
         }
         paint.color = Color.WHITE; paint.alpha = 240
         canvas.drawPath(leaf, paint)
         paint.color = bodyPurple(); paint.alpha = 255
-        canvas.drawCircle(c.cx - c.r * 0.47f, c.cy, c.r * 0.07f, paint)
+        canvas.drawCircle(fR - c.r * 0.26f, c.cy + c.r * 0.06f, c.r * 0.065f, paint)
     }
 
     // ---------------- touch ----------------
