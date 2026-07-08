@@ -159,19 +159,21 @@ class Emulator {
         continue;
       }
 
-      if (audio_ok_) {
-        // Audio-driven pacing: wait until the ring has room for the next frame.
+      // Audio-pace only while the stream is genuinely draining. If the output
+      // device changed (or the callback stalls for any reason), fall back to a
+      // real-time clock so gameplay stays smooth instead of starving on the CV.
+      const bool audio_healthy =
+          audio_ok_.load() && (NowNs() - last_cb_ns_.load() < 200'000'000LL);
+      if (audio_healthy && !rewinding) {
         std::unique_lock<std::mutex> lk(ring_mutex_);
-        ring_cv_.wait_for(lk, std::chrono::milliseconds(100), [this] {
+        ring_cv_.wait_for(lk, std::chrono::milliseconds(40), [this] {
           return !running_.load() || RingFree() >= 820 * 2;
         });
+        next_frame = std::chrono::steady_clock::now();  // keep clock baseline fresh
       } else {
         next_frame += frame_dur;
-        std::this_thread::sleep_until(next_frame);
-      }
-      if (rewinding) {
-        // No audio backpressure while rewinding: pace by clock.
-        next_frame = std::chrono::steady_clock::now() + frame_dur;
+        const auto now = std::chrono::steady_clock::now();
+        if (next_frame < now) next_frame = now;  // don't bank time after a stall
         std::this_thread::sleep_until(next_frame);
       }
     }
@@ -207,10 +209,17 @@ class Emulator {
     resample_pos_ -= in_frames;
   }
 
+  static int64_t NowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  }
+
   class Callback : public oboe::AudioStreamDataCallback {
    public:
     explicit Callback(Emulator& e) : e_(e) {}
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream*, void* data, int32_t frames) override {
+      e_.last_cb_ns_.store(NowNs());  // heartbeat for the pacing watchdog
       s16* out = (s16*)data;
       std::lock_guard<std::mutex> lk(e_.ring_mutex_);
       for (int i = 0; i < frames * 2; i++) {
@@ -229,8 +238,22 @@ class Emulator {
     Emulator& e_;
   };
 
-  void StartAudio() {
-    callback_ = std::make_unique<Callback>(*this);
+  // Fired when the output route changes (headphones, Bluetooth, dock, etc.).
+  // Oboe closes the disconnected stream; we open a fresh one on the new device.
+  class ErrorCallback : public oboe::AudioStreamErrorCallback {
+   public:
+    explicit ErrorCallback(Emulator& e) : e_(e) {}
+    void onErrorBeforeClose(oboe::AudioStream*, oboe::Result) override {
+      e_.audio_ok_.store(false);  // stop audio-pacing immediately -> clock pace
+    }
+    void onErrorAfterClose(oboe::AudioStream*, oboe::Result) override {
+      e_.ReopenAudio();
+    }
+   private:
+    Emulator& e_;
+  };
+
+  bool OpenAudioStream() {
     oboe::AudioStreamBuilder b;
     b.setDirection(oboe::Direction::Output)
         ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -239,24 +262,48 @@ class Emulator {
         ->setChannelCount(2)
         ->setSampleRate(kOutRate)
         ->setUsage(oboe::Usage::Game)
-        ->setDataCallback(callback_.get());
+        ->setDataCallback(callback_.get())
+        ->setErrorCallback(error_callback_.get());
     const auto res = b.openStream(stream_);
     if (res == oboe::Result::OK && stream_) {
       stream_->requestStart();
-      audio_ok_ = true;
-    } else {
-      LOGE("oboe open failed: %s", oboe::convertToText(res));
-      audio_ok_ = false;
+      last_cb_ns_.store(NowNs());  // grace period before the watchdog trips
+      audio_ok_.store(true);
+      return true;
     }
+    LOGE("oboe open failed: %s", oboe::convertToText(res));
+    audio_ok_.store(false);
+    return false;
+  }
+
+  void StartAudio() {
+    callback_ = std::make_unique<Callback>(*this);
+    error_callback_ = std::make_unique<ErrorCallback>(*this);
+    std::lock_guard<std::mutex> lk(audio_mutex_);
+    audio_shutdown_ = false;
+    OpenAudioStream();
+  }
+
+  void ReopenAudio() {
+    std::lock_guard<std::mutex> lk(audio_mutex_);
+    if (audio_shutdown_) return;
+    stream_.reset();  // Oboe already closed it before this callback
+    for (int attempt = 0; attempt < 3 && !audio_shutdown_; attempt++) {
+      if (OpenAudioStream()) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    ring_cv_.notify_all();
   }
 
   void StopAudio() {
+    std::lock_guard<std::mutex> lk(audio_mutex_);
+    audio_shutdown_ = true;
     if (stream_) {
       stream_->requestStop();
       stream_->close();
       stream_.reset();
     }
-    audio_ok_ = false;
+    audio_ok_.store(false);
   }
 
   std::unique_ptr<VSmile> vs_;
@@ -289,9 +336,13 @@ class Emulator {
   int ring_read_ = 0, ring_write_ = 0, ring_count_ = 0;
   double resample_pos_ = -1.0;
   s16 resample_prev_l_ = 0, resample_prev_r_ = 0;
-  bool audio_ok_ = false;
+  std::atomic<bool> audio_ok_{false};
+  std::atomic<int64_t> last_cb_ns_{0};  // when the audio callback last ran
+  std::mutex audio_mutex_;
+  bool audio_shutdown_ = false;
   std::shared_ptr<oboe::AudioStream> stream_;
   std::unique_ptr<Callback> callback_;
+  std::unique_ptr<ErrorCallback> error_callback_;
 
   // rewind
   static constexpr size_t kRewindMax = 900;  // ~15 s at 60 snapshots/s (1x reverse)
