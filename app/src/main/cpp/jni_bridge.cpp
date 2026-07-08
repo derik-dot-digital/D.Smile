@@ -37,6 +37,7 @@ class Emulator {
     if (!vs_->LoadCart(cart, cart_size)) return false;
     if (sysrom && sysrom_size > 0) vs_->LoadSysrom(sysrom, sysrom_size);
     vs_->SetVtechLogo(play_intro);
+    vs_->SetAccurate(accurate_);
     pal_ = pal;
     vs_->Reset(pal);
     frames_per_second_ = pal ? 50.08 : 60.05;
@@ -59,6 +60,11 @@ class Emulator {
   ~Emulator() { Stop(); }
 
   void SetPaused(bool p) { paused_.store(p); }
+  void SetAccurate(bool a) {
+    std::lock_guard<std::mutex> lk(core_mutex_);
+    accurate_ = a;
+    if (vs_) vs_->SetAccurate(a);
+  }
   void SetFastForward(bool ff) { fast_forward_.store(ff); }
   void SetFastForwardSpeed(float s) { ff_speed_.store(s); }  // 0 = uncapped
   void SetRewind(bool r) { rewind_.store(r); }
@@ -255,6 +261,7 @@ class Emulator {
 
   std::unique_ptr<VSmile> vs_;
   bool pal_ = false;
+  bool accurate_ = false;
   double frames_per_second_ = 60.05;
   std::mutex core_mutex_;
 
@@ -348,6 +355,11 @@ Java_com_dsmile_emulator_emu_NativeCore_nativeSetFastForward(JNIEnv*, jobject, j
 JNIEXPORT void JNICALL
 Java_com_dsmile_emulator_emu_NativeCore_nativeSetFastForwardSpeed(JNIEnv*, jobject, jfloat s) {
   if (g_emu) g_emu->SetFastForwardSpeed(s);
+}
+
+JNIEXPORT void JNICALL
+Java_com_dsmile_emulator_emu_NativeCore_nativeSetAccurate(JNIEnv*, jobject, jboolean a) {
+  if (g_emu) g_emu->SetAccurate(a);
 }
 
 JNIEXPORT void JNICALL

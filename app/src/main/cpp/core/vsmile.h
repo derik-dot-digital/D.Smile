@@ -71,6 +71,7 @@ class VSmile : public MachineIo {
   void LoadSysrom(const u8* data, size_t size_bytes);   // optional real BIOS
   void SetRegion(int code) { region_ = code & 0xF; }
   void SetVtechLogo(bool on) { vtech_logo_ = on; }
+  void SetAccurate(bool on) { spg_.GetPpu().SetAccurate(on); }
 
   void Reset(bool pal);
   void RunFrame();

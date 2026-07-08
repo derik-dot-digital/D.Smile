@@ -47,6 +47,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
     private var initialized = false
     private var menuOpen = false
     private var ffOn = false
+    private var accurateRender = false
     private var touchJoyX = 0
     private var touchJoyY = 0
     private var touchButtons = 0
@@ -103,6 +104,8 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             return
         }
         initialized = true
+        accurateRender = prefs.getBoolean("accurate", false)
+        NativeCore.nativeSetAccurate(accurateRender)
         NativeCore.nativeSetFastForwardSpeed(prefs.getFloat("ffSpeed", 3f))
         NativeCore.nativeStart()
 
@@ -245,10 +248,40 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         return File(dir, "$romName.slot$slot.dss")
     }
 
+    private fun thumbFile(slot: Int): File {
+        val dir = File(getExternalFilesDir(null), "states").apply { mkdirs() }
+        return File(dir, "$romName.slot$slot.png")
+    }
+
+    /** Grabs the currently-displayed frame as a small thumbnail bitmap. */
+    private fun captureThumbnail(): android.graphics.Bitmap? {
+        return try {
+            val buf = java.nio.ByteBuffer.allocateDirect(320 * 240 * 2)
+                .order(java.nio.ByteOrder.nativeOrder())
+            if (NativeCore.nativeGetFrame(buf) < 0) return null
+            buf.position(0)
+            val full = android.graphics.Bitmap.createBitmap(320, 240, android.graphics.Bitmap.Config.RGB_565)
+            full.copyPixelsFromBuffer(buf)
+            val thumb = android.graphics.Bitmap.createScaledBitmap(full, 160, 120, true)
+            full.recycle()
+            thumb
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun saveState(slot: Int) {
         val data = NativeCore.nativeSaveState()
         if (data != null) {
             stateFile(slot).writeBytes(data)
+            captureThumbnail()?.let { t ->
+                try {
+                    thumbFile(slot).outputStream().use {
+                        t.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, it)
+                    }
+                } catch (e: Exception) { /* thumbnail is best-effort */ }
+                t.recycle()
+            }
             Toast.makeText(this, "State saved (slot ${slot + 1})", Toast.LENGTH_SHORT).show()
         }
     }
@@ -289,6 +322,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             "Shader…",
             "CRT options…",
             "Aspect ratio…",
+            "Render mode: ${if (accurateRender) "Accurate" else "Fast"}",
             "Background…",
             "Bezel…",
             "Map controller buttons…",
@@ -303,8 +337,8 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .setTitle("${romName.substringBeforeLast('.')}  —  D.Smile v$version")
             .setItems(items) { _, which ->
                 when (which) {
-                    1 -> pickSlot("Save to slot") { saveState(it) }
-                    2 -> pickSlot("Load from slot") { loadState(it) }
+                    1 -> pickSlot("Save to slot", isSave = true) { saveState(it) }
+                    2 -> pickSlot("Load from slot", isSave = false) { loadState(it) }
                     3 -> {
                         ffOn = !ffOn
                         NativeCore.nativeSetFastForward(ffOn)
@@ -343,6 +377,15 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         prefs.edit().putString("aspect", renderer.aspectMode.name).apply()
                     }
                     14 -> pickChoice(
+                        "Render mode",
+                        listOf("Fast", "Accurate (fade / saturation)"),
+                        if (accurateRender) 1 else 0
+                    ) {
+                        accurateRender = it == 1
+                        NativeCore.nativeSetAccurate(accurateRender)
+                        prefs.edit().putBoolean("accurate", accurateRender).apply()
+                    }
+                    15 -> pickChoice(
                         "Background",
                         listOf("Black", "V.Smile Blue", "V.Smile Purple"),
                         renderer.backgroundMode.ordinal
@@ -350,7 +393,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.backgroundMode = BackgroundMode.entries[it]
                         prefs.edit().putString("background", renderer.backgroundMode.name).apply()
                     }
-                    15 -> pickChoice(
+                    16 -> pickChoice(
                         "Bezel",
                         listOf("None", "Silver", "Black"),
                         renderer.bezelMode.ordinal
@@ -358,10 +401,10 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                         renderer.bezelMode = BezelMode.entries[it]
                         prefs.edit().putString("bezel", renderer.bezelMode.name).apply()
                     }
-                    16 -> startBindingWizard()
-                    17 -> showTriggerDialog()
-                    18 -> NativeCore.nativeReset()
-                    19 -> confirmQuit()
+                    17 -> startBindingWizard()
+                    18 -> showTriggerDialog()
+                    19 -> NativeCore.nativeReset()
+                    20 -> confirmQuit()
                 }
             }
             .setOnDismissListener {
@@ -385,10 +428,56 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             .show()
     }
 
-    private fun pickSlot(title: String, f: (Int) -> Unit) {
+    // Slot picker showing each slot's saved-frame thumbnail and time. On Load,
+    // empty slots are dimmed and ignored.
+    private fun pickSlot(title: String, isSave: Boolean, f: (Int) -> Unit) {
+        val d = resources.displayMetrics.density
+        val white = android.graphics.Color.WHITE
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = 3
+            override fun getItem(p: Int): Any = p
+            override fun getItemId(p: Int) = p.toLong()
+            override fun getView(pos: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val row = android.widget.LinearLayout(this@EmuActivity).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding((14 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
+                }
+                val img = android.widget.ImageView(this@EmuActivity).apply {
+                    layoutParams = android.widget.LinearLayout.LayoutParams((80 * d).toInt(), (60 * d).toInt())
+                        .apply { rightMargin = (14 * d).toInt() }
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                }
+                val exists = stateFile(pos).exists()
+                val thumb = thumbFile(pos)
+                if (thumb.exists()) {
+                    img.setImageBitmap(android.graphics.BitmapFactory.decodeFile(thumb.absolutePath))
+                } else {
+                    img.setBackgroundColor(android.graphics.Color.argb(40, 255, 255, 255))
+                }
+                val col = android.widget.LinearLayout(this@EmuActivity).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                }
+                col.addView(android.widget.TextView(this@EmuActivity).apply {
+                    text = "Slot ${pos + 1}"; textSize = 17f; setTextColor(white)
+                })
+                val sub = if (exists)
+                    android.text.format.DateUtils.getRelativeTimeSpanString(stateFile(pos).lastModified()).toString()
+                else "Empty"
+                col.addView(android.widget.TextView(this@EmuActivity).apply {
+                    text = sub; textSize = 12f; alpha = 0.7f; setTextColor(white)
+                })
+                row.addView(img); row.addView(col)
+                row.alpha = if (!isSave && !exists) 0.4f else 1f
+                return row
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setItems(arrayOf("Slot 1", "Slot 2", "Slot 3")) { _, s -> f(s) }
+            .setAdapter(adapter) { _, which ->
+                if (isSave || stateFile(which).exists()) f(which)
+                else Toast.makeText(this, "Slot ${which + 1} is empty", Toast.LENGTH_SHORT).show()
+            }
             .setOnDismissListener { if (!menuOpen && initialized) NativeCore.nativeSetPaused(false) }
             .show()
     }

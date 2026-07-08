@@ -37,11 +37,13 @@ void Ppu::Reset(bool pal) {
   vcompress_amount_ = 0x20;
   vcompress_offset_ = 0;
   fade_level_ = 0;
+  tv_control_ = 0x0020;
   sprite_ctrl_ = 0;
   stn_lcd_ = 0;
   irq_vpos_ = irq_hpos_ = 0x1FF;
   irq_ctrl_ = irq_status_ = 0;
   sprite_dma_source_ = sprite_dma_target_ = 0;
+  lut_dirty_ = true;
   UpdateIrq();
 }
 
@@ -60,6 +62,7 @@ void Ppu::SaveState(StateWriter& w) const {
   w.U16(sprite_segment_ptr_); w.U16(blend_level_);
   w.U16(vcompress_amount_); w.U16(vcompress_offset_);
   w.U16(fade_level_); w.U16(sprite_ctrl_); w.U16(stn_lcd_);
+  w.U16(tv_control_);
   w.U16(irq_vpos_); w.U16(irq_hpos_);
   w.U16(irq_ctrl_); w.U16(irq_status_);
   w.U16(sprite_dma_source_); w.U16(sprite_dma_target_);
@@ -80,9 +83,11 @@ void Ppu::LoadState(StateReader& r) {
   sprite_segment_ptr_ = r.U16(); blend_level_ = r.U16();
   vcompress_amount_ = r.U16(); vcompress_offset_ = r.U16();
   fade_level_ = r.U16(); sprite_ctrl_ = r.U16(); stn_lcd_ = r.U16();
+  tv_control_ = r.U16();
   irq_vpos_ = r.U16(); irq_hpos_ = r.U16();
   irq_ctrl_ = r.U16(); irq_status_ = r.U16();
   sprite_dma_source_ = r.U16(); sprite_dma_target_ = r.U16();
+  lut_dirty_ = true;
   UpdateIrq();
 }
 
@@ -172,6 +177,7 @@ u16 Ppu::Read(u32 addr) {
     case 0x22: return sprite_segment_ptr_;
     case 0x2A: return blend_level_;
     case 0x30: return fade_level_;
+    case 0x3C: return tv_control_;
     case 0x36: return irq_vpos_;
     case 0x37: return irq_hpos_;
     case 0x38: return (u16)cur_scanline_;
@@ -221,6 +227,7 @@ void Ppu::Write(u32 addr, u16 val) {
     case 0x22: sprite_segment_ptr_ = val; return;
     case 0x2A: blend_level_ = val & 3; return;
     case 0x30: fade_level_ = val & 0xFF; return;
+    case 0x3C: tv_control_ = val; return;
     case 0x36: irq_vpos_ = val & 0x1FF; return;
     case 0x37: irq_hpos_ = val & 0x1FF; return;
     case 0x42: sprite_ctrl_ = val & 3; return;
@@ -238,6 +245,34 @@ void Ppu::Write(u32 addr, u16 val) {
     case 0x72: StartSpriteDma(val); return;
     default: return;
   }
+}
+
+void Ppu::BuildPostLut() {
+  const int fade = fade_level_ & 0xFF;
+  const int sat = tv_control_ & 0xFF;
+  const float factor = (float)(255 - sat) / (float)(255 - 0x20);
+  for (u32 v = 0; v < 32768; v++) {
+    const int r5 = (v >> 10) & 31, g5 = (v >> 5) & 31, b5 = v & 31;
+    int r = (r5 << 3) | (r5 >> 2);
+    int g = (g5 << 3) | (g5 >> 2);
+    int b = (b5 << 3) | (b5 >> 2);
+    if (sat != 0x20) {  // saturation adjust around luma (MAME coefficients)
+      const float luma = 0.299f * r + 0.587f * g + 0.114f * b;
+      r = (int)(luma + (r - luma) * factor + 0.5f);
+      g = (int)(luma + (g - luma) * factor + 0.5f);
+      b = (int)(luma + (b - luma) * factor + 0.5f);
+    }
+    r -= fade;  // fade subtracts from each channel post-conversion
+    g -= fade;
+    b -= fade;
+    r = r < 0 ? 0 : (r > 255 ? 255 : r);
+    g = g < 0 ? 0 : (g > 255 ? 255 : g);
+    b = b < 0 ? 0 : (b > 255 ? 255 : b);
+    post_lut_[v] = (u16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+  }
+  lut_fade_ = fade_level_;
+  lut_tv_ = tv_control_;
+  lut_dirty_ = false;
 }
 
 void Ppu::DrawLine(int line) {
@@ -262,9 +297,17 @@ void Ppu::DrawLine(int line) {
   }
 
   u16* out = &framebuffer_[line * 320];
-  for (int x = 0; x < 320; x++) {
-    const u16 px = linebuf_[x];
-    out[x] = (px & kTransparent) ? 0 : Rgb555To565(px);
+  if (accurate_) {
+    if (lut_dirty_ || lut_fade_ != fade_level_ || lut_tv_ != tv_control_) BuildPostLut();
+    for (int x = 0; x < 320; x++) {
+      const u16 px = linebuf_[x];
+      out[x] = post_lut_[(px & kTransparent) ? 0 : (px & 0x7FFF)];
+    }
+  } else {
+    for (int x = 0; x < 320; x++) {
+      const u16 px = linebuf_[x];
+      out[x] = (px & kTransparent) ? 0 : Rgb555To565(px);
+    }
   }
 }
 

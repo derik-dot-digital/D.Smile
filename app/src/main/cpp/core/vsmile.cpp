@@ -8,7 +8,7 @@ namespace dsmile {
 
 namespace {
 constexpr u32 kStateMagic = 0x44534D53;  // "DSMS"
-constexpr u32 kStateVersion = 2;
+constexpr u32 kStateVersion = 3;
 
 u32 Fnv1a(const u8* data, size_t n) {
   u32 h = 2166136261u;

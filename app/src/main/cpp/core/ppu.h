@@ -18,6 +18,10 @@ class Ppu {
   // Framebuffer: RGB565, row-major 320x240.
   const u16* Framebuffer() const { return &framebuffer_[0]; }
 
+  // Accurate mode adds the fade + saturation post-processing MAME does but
+  // veesem (our fast path) omits. Off = fast path stays byte-identical.
+  void SetAccurate(bool a) { accurate_ = a; lut_dirty_ = true; }
+
   void SaveState(struct StateWriter& w) const;
   void LoadState(struct StateReader& r);
 
@@ -39,6 +43,7 @@ class Ppu {
                     bool hflip, unsigned bpp, bool blend);
   void UpdateIrq();
   void StartSpriteDma(u16 length);
+  void BuildPostLut();  // 32K RGB555 -> RGB565 with saturation + fade baked in
 
   Spg200& bus_;
   CycleClock scanline_clock_;
@@ -55,11 +60,18 @@ class Ppu {
   u16 blend_level_ = 0;
   u16 vcompress_amount_ = 0x20, vcompress_offset_ = 0;
   u16 fade_level_ = 0;
+  u16 tv_control_ = 0x0020;  // reg 0x283C: hue(hi) / saturation(lo), 0x20 = neutral
   u16 sprite_ctrl_ = 0;
   u16 stn_lcd_ = 0;
   u16 irq_vpos_ = 0x1FF, irq_hpos_ = 0x1FF;
   u16 irq_ctrl_ = 0, irq_status_ = 0;  // bit0 vblank, bit1 pos, bit2 dma
   u16 sprite_dma_source_ = 0, sprite_dma_target_ = 0;
+
+  // Accurate-mode post-processing
+  bool accurate_ = false;
+  bool lut_dirty_ = true;
+  u16 lut_fade_ = 0xFFFF, lut_tv_ = 0xFFFF;
+  u16 post_lut_[32768]{};
 
   // Scanline work buffer in raw RGB555 (bit15 = still-transparent), converted
   // to RGB565 into framebuffer_ at end of line.

@@ -12,6 +12,7 @@ object NativeCore {
     external fun nativeSetPaused(paused: Boolean)
     external fun nativeSetFastForward(ff: Boolean)
     external fun nativeSetFastForwardSpeed(speed: Float)  // 0 = uncapped
+    external fun nativeSetAccurate(accurate: Boolean)
     external fun nativeSetRewind(rewind: Boolean)
     external fun nativeSetInput(joyX: Int, joyY: Int, buttons: Int)
     external fun nativeReset()
