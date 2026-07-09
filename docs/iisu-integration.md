@@ -1,9 +1,8 @@
 # Launching D.Smile from iiSU (and other frontends)
 
-## What to add to your iiSU systems file
+## What to add to your iiSU emuladores.json
 
-Add this as a new system entry (or merge the `emulators` block into an existing
-V.Smile system if you already have one):
+Add this as a new entry within the VTech V.Smile console block. 
 
 ```json
 {

@@ -14,7 +14,7 @@ Boot your childhood, dial in a CRT, and play the library on your phone.
 
 <br/><br/>
 
-<img src=".github/assets/hero.png" width="760" alt="Alphabet Park Adventure running in D.Smile with the CRT shader, silver bezel and purple background" />
+<img src=".github/assets/hero.jpg" width="900" alt="D.Smile running the V.Smile boot screen with the CRT shader, silver bezel, purple background and on-screen controller" />
 
 </div>
 
@@ -46,9 +46,9 @@ Boot your childhood, dial in a CRT, and play the library on your phone.
 
 <div align="center">
 
-| CRT + purple + silver bezel | Crisp pixel mode |
+| CRT shader, classic controller | Crisp pixel mode, pink controller |
 | :---: | :---: |
-| <img src=".github/assets/screen-crt.png" width="380" /> | <img src=".github/assets/screen-pixel.png" width="380" /> |
+| <img src=".github/assets/screen-crt.jpg" width="420" /> | <img src=".github/assets/screen-pixel.jpg" width="420" /> |
 
 </div>
 
@@ -63,16 +63,6 @@ Optional: tap **BIOS** to import a V.Smile system ROM for better compatibility. 
 ## Launching from a front end
 
 D.Smile exposes an activity that front ends can launch straight into a game. See [docs/iisu-integration.md](docs/iisu-integration.md) for the iiSU config block and the general intent contract that also covers Daijisho and ES-DE.
-
-## Building
-
-Everything the build needs (JDK, Android SDK and NDK, Gradle) lives under `toolchain/` and is not committed.
-
-```
-ANDROID_HOME=<repo>/toolchain/sdk  JAVA_HOME=<repo>/toolchain/jdk-17...  gradle assembleRelease
-```
-
-The APK lands in `app/build/outputs/apk/release/`.
 
 ## License
 
