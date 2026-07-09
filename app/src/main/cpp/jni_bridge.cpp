@@ -127,9 +127,8 @@ class Emulator {
           vs_->RunFrame();
           vs_->DrainAudio(spu_buf_, kSpuBufMax);  // discard audio while rewinding
         } else {
-          // Apply the latest held input every frame (like veesem's per-frame
-          // push) so held directions survive any controller re-sync and never
-          // depend on a UI event arriving.
+          // Apply the latest held input every frame so held directions survive
+          // any controller re-sync and never depend on a UI event arriving.
           const u64 in = input_state_.load();
           vs_->SetInput((s16)(in >> 48), (s16)(in >> 32), (u32)(in & 0xFFFFFFFF));
           vs_->RunFrame();

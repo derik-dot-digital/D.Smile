@@ -256,7 +256,7 @@ void Ppu::BuildPostLut() {
     int r = (r5 << 3) | (r5 >> 2);
     int g = (g5 << 3) | (g5 >> 2);
     int b = (b5 << 3) | (b5 >> 2);
-    if (sat != 0x20) {  // saturation adjust around luma (MAME coefficients)
+    if (sat != 0x20) {  // saturation adjust around luma
       const float luma = 0.299f * r + 0.587f * g + 0.114f * b;
       r = (int)(luma + (r - luma) * factor + 0.5f);
       g = (int)(luma + (g - luma) * factor + 0.5f);

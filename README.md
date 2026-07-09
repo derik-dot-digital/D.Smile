@@ -1,42 +1,79 @@
+<div align="center">
+
+<img src=".github/assets/icon.png" width="132" alt="D.Smile icon" />
+
 # D.Smile
 
-A from-scratch VTech V.Smile emulator for Android.
+**A modern VTech V.Smile emulator for Android.**
 
-- **Core**: C++20 interpreter for the SunPlus SPG200 SoC (unSP CPU, PPU, 16-channel
-  SPU, GPIO/UART, timers, DMA) with the V.Smile controller serial protocol.
-- **Boot**: cartridges boot directly (no BIOS needed). If a BIOS/sysrom dump named
-  `*bios*` or `*sysrom*` sits in your ROM folder, the real V.Smile boot intro plays.
-- **Features**: save states (3 slots), rewind (~30 s), fast forward, on-screen
-  controls (toggleable, opacity slider, controller-LED feedback), full gamepad
-  remapping including hotkeys, CRT/sharp/pixel shaders, 4:3/stretch/integer aspect.
-- **Frontends**: exported activity for iiSU / Daijisho / ES-DE — see
-  [docs/iisu-integration.md](docs/iisu-integration.md).
+Boot your childhood, dial in a CRT, and play the library on your phone.
+
+<img src="https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84?style=flat-square" alt="Android 8.0+" />
+<img src="https://img.shields.io/badge/renderer-OpenGL%20ES-blue?style=flat-square" alt="OpenGL ES" />
+<img src="https://img.shields.io/badge/controllers-touch%20%2B%20gamepad-orange?style=flat-square" alt="touch and gamepad" />
+
+<br/><br/>
+
+<img src=".github/assets/hero.png" width="760" alt="Alphabet Park Adventure running in D.Smile with the CRT shader, silver bezel and purple background" />
+
+</div>
+
+## Features
+
+**Play**
+- Runs V.Smile cartridge dumps straight away, no BIOS required.
+- Optional system ROM import for maximum compatibility, dropped in with a file picker and validated automatically.
+- Save states with live thumbnails and timestamps, and per game slot memory.
+- Rewind and fast forward, with an adjustable fast forward speed.
+
+**Look**
+- A real CRT shader with barrel curvature, phosphor glow, scanlines, aperture grille and vignette, each on its own intensity slider.
+- Pixel, sharp and CRT display modes, plus 4:3, stretch and integer scaling.
+- Themed letterbox backgrounds (black, wavy blue, or V.Smile purple) and silver or black TV bezels that wrap the picture.
+- A second, more accurate render path that adds the console's fade and colour effects on top of the fast one.
+
+**Control**
+- An on screen controller modelled on the real thing, with classic orange and pink themes and a swappable joystick.
+- A full layout editor: drag to move, box select to move groups, resize with a multiplier, save and name your own layouts.
+- Gamepad support with remappable buttons and bindable hotkeys for save, load, fast forward and rewind.
+- Smooth, low latency input that keeps working when you switch audio output mid game.
+
+**Fit in**
+- Launches directly into a game from front ends like iiSU, Daijisho and ES-DE.
+- Sideload friendly, landscape everywhere, and it remembers your setup.
+
+## Screenshots
+
+<div align="center">
+
+| CRT + purple + silver bezel | Crisp pixel mode |
+| :---: | :---: |
+| <img src=".github/assets/screen-crt.png" width="380" /> | <img src=".github/assets/screen-pixel.png" width="380" /> |
+
+</div>
+
+## Getting started
+
+1. Grab the latest `D.Smile-x.y.z.apk` from [Releases](../../releases) and install it (allow installs from your browser if prompted).
+2. Open D.Smile, tap **ROM folder**, and pick the folder with your `.bin` dumps.
+3. Tap a game. The menu button in the top corner opens save states, video options, the layout editor and more.
+
+Optional: tap **BIOS** to import a V.Smile system ROM for better compatibility. It is not required, games boot and play without one.
+
+## Launching from a front end
+
+D.Smile exposes an activity that front ends can launch straight into a game. See [docs/iisu-integration.md](docs/iisu-integration.md) for the iiSU config block and the general intent contract that also covers Daijisho and ES-DE.
 
 ## Building
 
-Everything (JDK, Android SDK/NDK, Gradle) lives in `toolchain/` (not checked in).
+Everything the build needs (JDK, Android SDK and NDK, Gradle) lives under `toolchain/` and is not committed.
 
 ```
-$env:JAVA_HOME = "<repo>\toolchain\jdk-17.0.19+10"
-$env:ANDROID_HOME = "<repo>\toolchain\sdk"
-toolchain\gradle-8.11.1\bin\gradle.bat assembleRelease
+ANDROID_HOME=<repo>/toolchain/sdk  JAVA_HOME=<repo>/toolchain/jdk-17...  gradle assembleRelease
 ```
 
-APK lands in `app/build/outputs/apk/release/`.
+The APK lands in `app/build/outputs/apk/release/`.
 
-### Core smoke test (desktop)
+## License
 
-```
-toolchain\w64devkit\bin\g++ -std=c++20 -O2 -o test\out\host_test.exe test\host_test.cpp app\src\main\cpp\core\*.cpp
-test\out\host_test.exe "<rom>.bin" 1800
-```
-
-Boots the ROM headless, dumps framebuffer BMPs, and verifies save-state determinism.
-
-## Accuracy references
-
-Behavior was researched from [veesem](https://github.com/sp1187/veesem) (ISC),
-[VFrown](https://github.com/Schnert0/VFrown), MAME's unSP/SPG2xx cores, and
-[vdream](https://github.com/fodsoft/vdream) — see `docs/research/`. All D.Smile
-code is original; the SPG200 register-level behavior follows those references,
-with veesem serving as the primary behavioral model.
+Personal project, all original code. Not affiliated with or endorsed by VTech.

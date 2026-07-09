@@ -18,8 +18,8 @@ class Ppu {
   // Framebuffer: RGB565, row-major 320x240.
   const u16* Framebuffer() const { return &framebuffer_[0]; }
 
-  // Accurate mode adds the fade + saturation post-processing MAME does but
-  // veesem (our fast path) omits. Off = fast path stays byte-identical.
+  // Accurate mode adds the console's fade + saturation post-processing that
+  // the fast path omits. Off = fast path stays byte-identical.
   void SetAccurate(bool a) { accurate_ = a; lut_dirty_ = true; }
 
   void SaveState(struct StateWriter& w) const;

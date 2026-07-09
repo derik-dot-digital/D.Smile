@@ -262,7 +262,7 @@ VSmile::VSmile() : spg_(*this), joy_(*this) {
 void VSmile::MakeDummySysrom() {
   sysrom_.assign(0x100000, 0);
   // Stuff the sysrom entry-point vector area so games that call into the BIOS
-  // land on harmless zero-filled memory (same trick as veesem).
+  // land on harmless zero-filled memory.
   for (u32 i = 0xFFFC0; i < 0xFFFDC; i += 2) sysrom_[i + 1] = 0x0031;
   spg_.SetSysrom(sysrom_.data());
 }
@@ -324,7 +324,7 @@ void VSmile::Reset(bool pal) {
   joy_.Reset();
   spg_.Reset(pal);
   // Real hardware boots with both controller-request lines pending; the game's
-  // controller driver arms itself off this (veesem does the same at reset).
+  // controller driver arms itself off this.
   spg_.RaiseExtIrq(0);
   spg_.RaiseExtIrq(1);
 }

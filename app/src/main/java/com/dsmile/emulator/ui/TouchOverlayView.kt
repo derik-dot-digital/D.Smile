@@ -271,18 +271,19 @@ class TouchOverlayView(context: Context) : View(context) {
                 val lit = (leds and ledBit) != 0
                 // Soft coloured glow halo when the game lights this button.
                 if (lit) {
+                    val gr = lighten(base, 0.18f)  // glow stays in the button's hue
                     paint.shader = android.graphics.RadialGradient(
-                        c.cx, c.cy, c.r * 2.0f,
+                        c.cx, c.cy, c.r * 2.05f,
                         intArrayOf(
-                            Color.argb(170, Color.red(base), Color.green(base), Color.blue(base)),
-                            Color.argb(80, Color.red(base), Color.green(base), Color.blue(base)),
+                            Color.argb(210, Color.red(gr), Color.green(gr), Color.blue(gr)),
+                            Color.argb(110, Color.red(base), Color.green(base), Color.blue(base)),
                             Color.argb(0, Color.red(base), Color.green(base), Color.blue(base))
                         ),
-                        floatArrayOf(0.28f, 0.60f, 1f),
+                        floatArrayOf(0.26f, 0.58f, 1f),
                         android.graphics.Shader.TileMode.CLAMP
                     )
                     paint.alpha = 255
-                    canvas.drawCircle(c.cx, c.cy, c.r * 2.0f, paint)
+                    canvas.drawCircle(c.cx, c.cy, c.r * 2.05f, paint)
                     paint.shader = null
                 }
                 // silver bezel ring (same shading as the screen bezel)
@@ -290,13 +291,13 @@ class TouchOverlayView(context: Context) : View(context) {
                 paint.alpha = alpha
                 canvas.drawCircle(c.cx, c.cy, c.r * 1.16f, paint)
                 paint.shader = null
-                // button face — brightens toward its colour when lit
-                paint.color = if (lit) lighten(base, 0.42f) else base
+                // button face — glows in its own colour when lit (not toward white)
+                paint.color = if (lit) lighten(base, 0.22f) else base
                 paint.alpha = if (lit) 255 else alpha
                 canvas.drawCircle(c.cx, c.cy, c.r, paint)
-                if (lit) {  // hot inner core
-                    paint.color = lighten(base, 0.72f); paint.alpha = 210
-                    canvas.drawCircle(c.cx, c.cy, c.r * 0.62f, paint)
+                if (lit) {  // brighter inner core, still clearly the button colour
+                    paint.color = lighten(base, 0.38f); paint.alpha = 190
+                    canvas.drawCircle(c.cx, c.cy, c.r * 0.58f, paint)
                 }
                 // glossy dome highlight
                 paint.color = Color.WHITE; paint.alpha = (alpha * 0.35f).toInt()

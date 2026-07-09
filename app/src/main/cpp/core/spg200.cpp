@@ -117,7 +117,7 @@ void Spg200::RunFrame() {
     spu_.RunCycles(cycles);
     if (ppu_.RunCycles(cycles)) break;
   }
-  // Watchdog checked once per frame (like veesem).
+  // Watchdog checked once per frame.
   if (system_ctrl_ & 0x8000) {
     watchdog_counter_ -= frame_cycles;
     if (watchdog_counter_ <= 0) {
