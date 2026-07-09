@@ -382,7 +382,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                     }
                     14 -> pickChoice(
                         "Render mode",
-                        listOf("Fast", "Accurate (fade / saturation)"),
+                        listOf("Fast", "Accurate"),
                         if (accurateRender) 1 else 0
                     ) {
                         accurateRender = it == 1
