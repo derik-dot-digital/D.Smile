@@ -58,7 +58,7 @@ Boot your childhood, dial in a CRT, and play the library on your phone.
 2. Open D.Smile, tap **ROM folder**, and pick the folder with your `.bin` dumps.
 3. Tap a game. The menu button in the top corner opens save states, video options, the layout editor and more.
 
-Optional: tap **BIOS** to import a V.Smile system ROM for better compatibility. It is not required, games boot and play without one.
+A BIOS is **not required**. Games boot and play fine without one. Importing a V.Smile system ROM (tap **BIOS**) is purely optional and only adds a bit of extra compatibility that can help a handful of games. Skip it unless you run into a title that misbehaves.
 
 ## Launching from a front end
 
