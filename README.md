@@ -25,8 +25,8 @@
 - Rewind and fast forward with adjustable speed. 
 
 **Look**
-- A real CRT shader with barrel curvature, phosphor glow, scanlines, aperture grille and vignette, each on its own intensity slider.
-- Pixel, sharp and CRT display modes, plus 4:3, stretch and integer scaling.
+- CRT shader with barrel curvature, glow, scanlines, aperture grille and vignette, each with effect its own intensity slider.
+- Pixel, sharp, and CRT display modes. For aspect ratio you have 4:3, stretch, and integer scaling.
 - Themed letterbox backgrounds (black, wavy blue, or V.Smile purple) and silver or black TV bezels that wrap the picture.
 - Two renderer options. One that should be fast and perfect for most games, but the second is intended to be a more accurate option for edge cases.
 
