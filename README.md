@@ -12,7 +12,7 @@
 
 <br/><br/>
 
-<img src=".github/assets/hero.jpg" width="900" alt="D.Smile running the V.Smile boot screen with the CRT shader, silver bezel, purple background and on-screen controller" />
+<img src=".github/assets/hero.png" width="900" alt="D.Smile running the V.Smile boot screen with the CRT shader, silver bezel, purple background and on-screen controller" />
 
 </div>
 
