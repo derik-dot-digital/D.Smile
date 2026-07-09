@@ -170,12 +170,20 @@ class InputMapper(private val prefs: SharedPreferences) {
     /** Handles joystick axis motion. Returns true if consumed. */
     fun onMotion(event: MotionEvent, hotkeys: HotkeyListener): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return false
-        var x = event.getAxisValue(MotionEvent.AXIS_X)
-        var y = event.getAxisValue(MotionEvent.AXIS_Y)
-        if (abs(x) < 0.15f) x = 0f
-        if (abs(y) < 0.15f) y = 0f
-        joyX = (x * 5f).roundToInt().coerceIn(-5, 5)
-        joyY = (-y * 5f).roundToInt().coerceIn(-5, 5)
+        val x = event.getAxisValue(MotionEvent.AXIS_X)
+        val y = event.getAxisValue(MotionEvent.AXIS_Y)
+        // Radial deadzone + remap: absorbs spring-back overshoot (which would
+        // otherwise register as a brief opposite direction) and small drift.
+        val mag = kotlin.math.hypot(x, y)
+        val dz = 0.24f
+        if (mag > dz) {
+            val scaled = ((mag - dz) / (1f - dz)).coerceIn(0f, 1f)
+            joyX = (x / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+            joyY = (-y / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+        } else {
+            joyX = 0
+            joyY = 0
+        }
 
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)

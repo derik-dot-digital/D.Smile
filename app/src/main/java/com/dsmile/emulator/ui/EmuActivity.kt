@@ -234,8 +234,8 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
         when (action) {
             Action.FAST_FORWARD -> NativeCore.nativeSetFastForward(pressed)
             Action.REWIND -> NativeCore.nativeSetRewind(pressed)
-            Action.SAVE_STATE -> if (pressed) saveState(0)
-            Action.LOAD_STATE -> if (pressed) loadState(0)
+            Action.SAVE_STATE -> if (pressed) saveState(lastSlot())
+            Action.LOAD_STATE -> if (pressed) loadState(lastSlot())
             Action.MENU -> if (pressed) showMenu()
             else -> {}
         }
@@ -282,6 +282,7 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
                 } catch (e: Exception) { /* thumbnail is best-effort */ }
                 t.recycle()
             }
+            prefs.edit().putInt("lastSlot_$romName", slot).apply()
             Toast.makeText(this, "State saved (slot ${slot + 1})", Toast.LENGTH_SHORT).show()
         }
     }
@@ -293,11 +294,14 @@ class EmuActivity : Activity(), TouchOverlayView.Listener, HotkeyListener {
             return
         }
         if (NativeCore.nativeLoadState(f.readBytes())) {
+            prefs.edit().putInt("lastSlot_$romName", slot).apply()
             Toast.makeText(this, "State loaded (slot ${slot + 1})", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "State is for a different game/version", Toast.LENGTH_LONG).show()
         }
     }
+
+    private fun lastSlot(): Int = prefs.getInt("lastSlot_$romName", 0)
 
     // ---------------- menu ----------------
 

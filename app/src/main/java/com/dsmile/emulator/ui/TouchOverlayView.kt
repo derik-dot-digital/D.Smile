@@ -236,6 +236,12 @@ class TouchOverlayView(context: Context) : View(context) {
         (Color.blue(color) * 0.80f).toInt()
     )
 
+    private fun lighten(color: Int, frac: Float): Int = Color.rgb(
+        (Color.red(color) + (255 - Color.red(color)) * frac).toInt(),
+        (Color.green(color) + (255 - Color.green(color)) * frac).toInt(),
+        (Color.blue(color) + (255 - Color.blue(color)) * frac).toInt()
+    )
+
     private fun drawJoystick(canvas: Canvas, a: Int) {
         val j = ctl("joystick")
         val dish = if (joySwap) ballColor() else dishColor()
@@ -253,29 +259,48 @@ class TouchOverlayView(context: Context) : View(context) {
         val alpha = if (held) 255 else a
         when (c.id) {
             "red", "yellow", "blue", "green" -> {
-                // silver bezel ring (same shading as the screen bezel)
-                paint.shader = silverShader(c.cx, c.cy, c.r * 1.16f)
-                paint.alpha = alpha
-                canvas.drawCircle(c.cx, c.cy, c.r * 1.16f, paint)
-                paint.shader = null
-                paint.color = when (c.id) {
+                val base = when (c.id) {
                     "red" -> Color.rgb(224, 58, 47)
                     "yellow" -> Color.rgb(245, 197, 24)
                     "blue" -> Color.rgb(46, 95, 208)
                     else -> Color.rgb(63, 165, 60)
                 }
-                paint.alpha = alpha
-                canvas.drawCircle(c.cx, c.cy, c.r, paint)
-                paint.color = Color.WHITE; paint.alpha = (alpha * 0.35f).toInt()
-                canvas.drawCircle(c.cx - c.r * 0.3f, c.cy - c.r * 0.35f, c.r * 0.3f, paint)
                 val ledBit = when (c.id) {
                     "green" -> 1; "blue" -> 2; "yellow" -> 4; else -> 8
                 }
-                if ((leds and ledBit) != 0) {
-                    stroke.color = Color.WHITE; stroke.alpha = 235
-                    stroke.strokeWidth = c.r * 0.16f
-                    canvas.drawCircle(c.cx, c.cy, c.r * 1.30f, stroke)
+                val lit = (leds and ledBit) != 0
+                // Soft coloured glow halo when the game lights this button.
+                if (lit) {
+                    paint.shader = android.graphics.RadialGradient(
+                        c.cx, c.cy, c.r * 2.0f,
+                        intArrayOf(
+                            Color.argb(170, Color.red(base), Color.green(base), Color.blue(base)),
+                            Color.argb(80, Color.red(base), Color.green(base), Color.blue(base)),
+                            Color.argb(0, Color.red(base), Color.green(base), Color.blue(base))
+                        ),
+                        floatArrayOf(0.28f, 0.60f, 1f),
+                        android.graphics.Shader.TileMode.CLAMP
+                    )
+                    paint.alpha = 255
+                    canvas.drawCircle(c.cx, c.cy, c.r * 2.0f, paint)
+                    paint.shader = null
                 }
+                // silver bezel ring (same shading as the screen bezel)
+                paint.shader = silverShader(c.cx, c.cy, c.r * 1.16f)
+                paint.alpha = alpha
+                canvas.drawCircle(c.cx, c.cy, c.r * 1.16f, paint)
+                paint.shader = null
+                // button face — brightens toward its colour when lit
+                paint.color = if (lit) lighten(base, 0.42f) else base
+                paint.alpha = if (lit) 255 else alpha
+                canvas.drawCircle(c.cx, c.cy, c.r, paint)
+                if (lit) {  // hot inner core
+                    paint.color = lighten(base, 0.72f); paint.alpha = 210
+                    canvas.drawCircle(c.cx, c.cy, c.r * 0.62f, paint)
+                }
+                // glossy dome highlight
+                paint.color = Color.WHITE; paint.alpha = (alpha * 0.35f).toInt()
+                canvas.drawCircle(c.cx - c.r * 0.3f, c.cy - c.r * 0.35f, c.r * 0.3f, paint)
             }
             "enter" -> drawEnter(canvas, c, alpha)
             "help" -> {
@@ -552,8 +577,17 @@ class TouchOverlayView(context: Context) : View(context) {
             listener?.onTouchInput(0, 0, 0)
             return
         }
-        val jx = (joyDx * 5f).roundToInt().coerceIn(-5, 5)
-        val jy = (-joyDy * 5f).roundToInt().coerceIn(-5, 5)
+        // Center deadzone + remap so the neutral zone is clean and there's no
+        // jump at its edge (stops jitter and opposite blips as you return).
+        val mag = hypot(joyDx, joyDy)
+        var jx = 0
+        var jy = 0
+        val dz = 0.30f
+        if (mag > dz) {
+            val scaled = ((mag - dz) / (1f - dz)).coerceIn(0f, 1f)
+            jx = (joyDx / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+            jy = (-joyDy / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+        }
         listener?.onTouchInput(jx, jy, heldBits)
     }
 }

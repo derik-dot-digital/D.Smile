@@ -68,9 +68,12 @@ class Emulator {
   void SetFastForward(bool ff) { fast_forward_.store(ff); }
   void SetFastForwardSpeed(float s) { ff_speed_.store(s); }  // 0 = uncapped
   void SetRewind(bool r) { rewind_.store(r); }
+  // Lock-free: the UI thread must never block on the core lock (it starves
+  // during fast-forward). The emu thread applies this every frame instead.
   void SetInput(int x, int y, u32 buttons) {
-    std::lock_guard<std::mutex> lk(core_mutex_);
-    if (vs_) vs_->SetInput(x, y, buttons);
+    const u64 packed = ((u64)(u16)(s16)x << 48) | ((u64)(u16)(s16)y << 32) |
+                       (buttons & 0xFFFFFFFFu);
+    input_state_.store(packed);
   }
 
   void Reset() {
@@ -124,6 +127,11 @@ class Emulator {
           vs_->RunFrame();
           vs_->DrainAudio(spu_buf_, kSpuBufMax);  // discard audio while rewinding
         } else {
+          // Apply the latest held input every frame (like veesem's per-frame
+          // push) so held directions survive any controller re-sync and never
+          // depend on a UI event arriving.
+          const u64 in = input_state_.load();
+          vs_->SetInput((s16)(in >> 48), (s16)(in >> 32), (u32)(in & 0xFFFFFFFF));
           vs_->RunFrame();
           if (++rewind_push_counter >= 1) {
             rewind_push_counter = 0;
@@ -319,6 +327,7 @@ class Emulator {
   std::atomic<float> ff_speed_{3.0f};
   std::atomic<bool> rewind_{false};
   std::atomic<u8> leds_{0};
+  std::atomic<u64> input_state_{0};  // packed joy x:16 | y:16 | buttons:32
 
   // published frame
   std::mutex frame_mutex_;
