@@ -102,8 +102,10 @@ bool Ppu::RunCycles(int cycles) {
     if (cur_scanline_ < 240) {
       DrawLine(cur_scanline_);
       if (cur_scanline_ == 239) {
-        irq_status_ |= 1;  // vblank
-        UpdateIrq();
+        if (irq_ctrl_ & 1) {  // vblank status only latches while enabled
+          irq_status_ |= 1;
+          UpdateIrq();
+        }
         frame_finished = true;
       }
       cur_scanline_++;
@@ -123,8 +125,8 @@ void Ppu::UpdateIrq() {
 }
 
 void Ppu::StartSpriteDma(u16 length) {
-  u16 len = length & 0x3FF;
-  while (len--) {
+  // Length is NOT masked: a full-table upload is written as 0x400.
+  while (length--) {
     const u16 word = bus_.Read(sprite_dma_source_++);
     const u16 t = sprite_dma_target_;
     Sprite& s = sprites_[(t & 0x3FF) >> 2];
@@ -135,7 +137,6 @@ void Ppu::StartSpriteDma(u16 length) {
       default: s.attr = word & 0x7FFF; break;
     }
     sprite_dma_target_ = (t + 1) & 0x3FF;
-    sprite_dma_source_ &= 0x3FFF;
   }
   if (irq_ctrl_ & 4) {
     irq_status_ |= 4;

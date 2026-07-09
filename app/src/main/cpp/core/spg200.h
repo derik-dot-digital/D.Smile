@@ -100,8 +100,12 @@ class Spg200 {
   // System
   u16 system_ctrl_ = 0;
   u16 extmem_ctrl_ = 0x0028;
-  u16 adc_ctrl_ = 0x2002, adc_data_ = 0;
-  s32 adc_counter_ = 0;
+  // ADC: readback is ctrl | status. The conversion clock (16-cycle tick,
+  // divided by 1 << clock-select) only advances while a conversion is active.
+  u16 adc_ctrl_ = 0, adc_status_ = 0, adc_data_ = 0;
+  s32 adc_active_ch_ = -1;
+  CycleClock adc_clock_{16};
+  u32 adc_div_ = 0;
   u16 prng_[2] = {0x1418, 0x1658};
   s32 watchdog_counter_ = 20250000;
 

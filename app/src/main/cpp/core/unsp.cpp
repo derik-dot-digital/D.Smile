@@ -5,6 +5,11 @@
 #include "spg200.h"
 #include "state.h"
 
+#ifdef DSMILE_TRACE
+#include <cstdio>
+FILE* g_unsp_trace = nullptr;  // set by host trace tools; one 16-byte record per Step
+#endif
+
 namespace dsmile {
 
 namespace {
@@ -153,6 +158,9 @@ bool UnSP::BranchTaken(int op0) const {
 }
 
 int UnSP::Step() {
+#ifdef DSMILE_TRACE
+  if (g_unsp_trace) fwrite(r_, 2, 8, g_unsp_trace);
+#endif
   if (CheckInterrupts()) return 10;
 
   const u16 op = Fetch();

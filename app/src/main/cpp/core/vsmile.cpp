@@ -8,7 +8,8 @@ namespace dsmile {
 
 namespace {
 constexpr u32 kStateMagic = 0x44534D53;  // "DSMS"
-constexpr u32 kStateVersion = 3;
+constexpr u32 kStateVersion = 4;
+constexpr u32 kMinStateVersion = 3;  // v3 differs only in the ADC block; migrated on load
 
 u32 Fnv1a(const u8* data, size_t n) {
   u32 h = 2166136261u;
@@ -297,7 +298,8 @@ void VSmile::SaveState(std::vector<u8>& out) const {
 bool VSmile::LoadState(const u8* data, size_t size) {
   StateReader r(data, size);
   if (r.U32() != kStateMagic) return false;
-  if (r.U32() != kStateVersion) return false;
+  r.version = r.U32();
+  if (r.version < kMinStateVersion || r.version > kStateVersion) return false;
   if (r.U32() != cart_checksum_) return false;
   spg_.LoadState(r);
   joy_.LoadState(r);

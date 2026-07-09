@@ -20,6 +20,7 @@ struct StateReader {
   const u8* p;
   const u8* end;
   bool ok = true;
+  u32 version = 0;  // set by VSmile::LoadState so blocks can migrate old layouts
   StateReader(const u8* data, size_t n) : p(data), end(data + n) {}
   u8 U8() { if (p + 1 > end) { ok = false; return 0; } return *p++; }
   u16 U16() { const u16 lo = U8(); return (u16)(lo | (U8() << 8)); }

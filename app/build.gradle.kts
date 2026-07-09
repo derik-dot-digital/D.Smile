@@ -12,8 +12,8 @@ android {
         applicationId = "com.dsmile.emulator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 35
-        versionName = "0.3.4"
+        versionCode = 36
+        versionName = "0.3.5"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }

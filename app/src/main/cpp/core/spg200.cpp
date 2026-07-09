@@ -2,6 +2,13 @@
 
 #include "state.h"
 
+#ifdef DSMILE_TRACE
+#include <cstdio>
+extern FILE* g_unsp_trace;
+// Instruction index for trace tags: one 16-byte record is written per Step.
+static long InstrIdx() { return g_unsp_trace ? ftell(g_unsp_trace) / 16 : -1; }
+#endif
+
 namespace dsmile {
 
 Spg200::Spg200(MachineIo& io) : io_(io), cpu_(*this), ppu_(*this), spu_(*this) {}
@@ -28,9 +35,12 @@ void Spg200::Reset(bool pal) {
   timer_b_data_ = timer_b_preload_ = timer_b_ctrl_ = timer_b_on_ = 0;
   system_ctrl_ = 0;
   extmem_ctrl_ = 0x0028;
-  adc_ctrl_ = 0x2002;
+  adc_ctrl_ = 0;
+  adc_status_ = 0;
   adc_data_ = 0;
-  adc_counter_ = 0;
+  adc_active_ch_ = -1;
+  adc_clock_.Reset();
+  adc_div_ = 0;
   prng_[0] = 0x1418;
   prng_[1] = 0x1658;
   watchdog_counter_ = 20250000;
@@ -63,7 +73,8 @@ void Spg200::SaveState(StateWriter& w) const {
   w.U16(timer_a_data_); w.U16(timer_a_preload_); w.U16(timer_a_ctrl_); w.U16(timer_a_on_);
   w.U16(timer_b_data_); w.U16(timer_b_preload_); w.U16(timer_b_ctrl_); w.U16(timer_b_on_);
   w.U16(system_ctrl_); w.U16(extmem_ctrl_);
-  w.U16(adc_ctrl_); w.U16(adc_data_); w.U32((u32)adc_counter_);
+  w.U16(adc_ctrl_); w.U16(adc_status_); w.U16(adc_data_);
+  w.U32((u32)adc_active_ch_); w.S64(adc_clock_.counter); w.U32(adc_div_);
   w.U16(prng_[0]); w.U16(prng_[1]);
   w.U32((u32)watchdog_counter_);
   w.U16(uart_ctrl_); w.U16(uart_status_);
@@ -91,7 +102,19 @@ void Spg200::LoadState(StateReader& r) {
   timer_a_data_ = r.U16(); timer_a_preload_ = r.U16(); timer_a_ctrl_ = r.U16(); timer_a_on_ = r.U16();
   timer_b_data_ = r.U16(); timer_b_preload_ = r.U16(); timer_b_ctrl_ = r.U16(); timer_b_on_ = r.U16();
   system_ctrl_ = r.U16(); extmem_ctrl_ = r.U16();
-  adc_ctrl_ = r.U16(); adc_data_ = r.U16(); adc_counter_ = (s32)r.U32();
+  if (r.version >= 4) {
+    adc_ctrl_ = r.U16(); adc_status_ = r.U16(); adc_data_ = r.U16();
+    adc_active_ch_ = (s32)r.U32(); adc_clock_.counter = r.S64(); adc_div_ = r.U32();
+  } else {  // v3 layout: ctrl carried the status bit; a mid-conversion counter is dropped
+    const u16 old_ctrl = r.U16();
+    adc_data_ = r.U16();
+    const u32 old_counter = r.U32();
+    adc_ctrl_ = old_ctrl & 0x177F;
+    adc_status_ = old_ctrl & 0x2000;
+    adc_active_ch_ = old_counter > 0 ? (s32)((old_ctrl >> 4) & 3) : -1;
+    adc_clock_.Reset();
+    adc_div_ = 0;
+  }
   prng_[0] = r.U16(); prng_[1] = r.U16();
   watchdog_counter_ = (s32)r.U32();
   uart_ctrl_ = r.U16(); uart_status_ = r.U16();
@@ -244,7 +267,7 @@ u16 Spg200::IoReadInner(u32 addr) {
     case 0x21: return io_irq_ctrl_;
     case 0x22: return io_irq_status_;
     case 0x23: return extmem_ctrl_;
-    case 0x25: return adc_ctrl_;
+    case 0x25: return (u16)(adc_ctrl_ | adc_status_);
     case 0x27: return adc_data_;
     case 0x2B: return pal_ ? 1 : 0;
     case 0x2C: {
@@ -287,18 +310,18 @@ void Spg200::IoWrite(u32 addr, u16 val) {
     case 0x0D: GpioWrite(2, 1, val); return;
     case 0x0E: GpioWrite(2, 2, val); return;
     case 0x0F: GpioWrite(2, 3, val); return;
-    case 0x10: timebase_setup_ = val & 0x0F; return;
-    case 0x11: timebase_tick_ = 0; return;
-    case 0x12: timer_a_data_ = timer_a_preload_ = val; return;
-    case 0x13: timer_a_ctrl_ = val; return;
-    case 0x14: timer_a_on_ = val & 1; return;
+    case 0x10: DTRACE("[tw@%ld] setup=%04x\n", InstrIdx(), val); timebase_setup_ = val & 0x0F; return;
+    case 0x11: DTRACE("[tw@%ld] tbclear tick=%u\n", InstrIdx(), timebase_tick_); timebase_tick_ = 0; return;
+    case 0x12: DTRACE("[tw@%ld] a_data=%04x tick=%u\n", InstrIdx(), val, timebase_tick_); timer_a_data_ = timer_a_preload_ = val; return;
+    case 0x13: DTRACE("[tw@%ld] a_ctrl=%04x\n", InstrIdx(), val); timer_a_ctrl_ = val; return;
+    case 0x14: DTRACE("[tw@%ld] a_on=%04x tick=%u\n", InstrIdx(), val, timebase_tick_); timer_a_on_ = val & 1; return;
     case 0x15:
       io_irq_status_ &= (u16)~0x0800;
       UpdateIoIrqLines();
       return;
-    case 0x16: timer_b_data_ = timer_b_preload_ = val; return;
-    case 0x17: timer_b_ctrl_ = val; return;
-    case 0x18: timer_b_on_ = val & 1; return;
+    case 0x16: DTRACE("[tw] b_data=%04x\n", val); timer_b_data_ = timer_b_preload_ = val; return;
+    case 0x17: DTRACE("[tw] b_ctrl=%04x\n", val); timer_b_ctrl_ = val; return;
+    case 0x18: DTRACE("[tw] b_on=%04x\n", val); timer_b_on_ = val & 1; return;
     case 0x19:
       io_irq_status_ &= (u16)~0x0400;
       UpdateIoIrqLines();
@@ -319,11 +342,22 @@ void Spg200::IoWrite(u32 addr, u16 val) {
       if (val == 0x55AA) watchdog_counter_ = 20250000;
       return;
     case 0x25: {
-      adc_ctrl_ = (adc_ctrl_ & 0x2000) | (val & 0x0FFF);
-      if (val & 0x2000) adc_ctrl_ &= (u16)~0x2000;  // W1C ready/irq flag
-      if ((val & 0x1000) && (val & 0x0001)) {
-        const int sel = (val >> 2) & 3;
-        adc_counter_ = 16 << (2 * sel + 4);
+      adc_ctrl_ = val & 0x177F;
+      adc_status_ &= (u16)~(val & 0x2000);  // W1C irq/ready flag
+      if (!(adc_status_ & 0x2000)) {
+        io_irq_status_ &= (u16)~0x2000;
+        UpdateIoIrqLines();
+      }
+      if (adc_ctrl_ & 0x0001) {  // enabled: flags ready even with no request
+        adc_status_ |= 0x2000;
+        if (adc_ctrl_ & 0x1000) {  // request (self-clearing): start a conversion
+          adc_status_ &= (u16)~0x2000;
+          adc_ctrl_ &= (u16)~0x1000;
+          adc_active_ch_ = (adc_ctrl_ >> 4) & 3;
+          adc_data_ &= (u16)~0x8000;
+        }
+      } else {
+        adc_active_ch_ = -1;
       }
       return;
     }
@@ -396,21 +430,21 @@ void Spg200::UartRxStart(u8 byte) {
 }
 
 void Spg200::TickAdc(int cycles) {
-  if (adc_counter_ > 0) {
-    adc_counter_ -= cycles;
-    if (adc_counter_ <= 0) {
-      adc_counter_ = 0;
-      const int ch = (adc_ctrl_ >> 4) & 3;
-      adc_data_ = (io_.AdcIn(ch) & 0x0FFF) | 0x8000;
-      adc_ctrl_ |= 0x2000;
+  if (adc_active_ch_ < 0) return;  // conversion clock only runs while active
+  if (adc_clock_.TickOnce(cycles)) {
+    adc_div_++;
+    const u32 div_mask = (1u << ((adc_ctrl_ >> 2) & 3)) - 1;
+    if ((adc_div_ & div_mask) == 0) {
+      adc_data_ = (io_.AdcIn(adc_active_ch_) & 0x03FF) | 0x8000;
+      adc_status_ |= 0x2000;
+      adc_active_ch_ = -1;
       if (adc_ctrl_ & 0x0200) RaiseIoIrq(0x2000);
     }
   }
 }
 
 void Spg200::TickTimers(int cycles) {
-  const int fired = timebase_clock_.Tick(cycles);
-  for (int i = 0; i < fired; i++) {
+  while (timebase_clock_.TickOnce(cycles)) {
     timebase_tick_++;
     u16 bits = 0;
     if ((timebase_tick_ & 7) == 0) bits |= 0x0040;      // 4096 Hz
@@ -451,6 +485,8 @@ void Spg200::TickTimers(int cycles) {
         if (++timer_a_data_ == 0) {
           timer_a_data_ = timer_a_preload_;
           bits |= 0x0800;
+          DTRACE("[ta@%ld] overflow reload=%04x rate=%d tick=%u\n", InstrIdx(), timer_a_preload_,
+                 rate, timebase_tick_);
         }
       }
     }

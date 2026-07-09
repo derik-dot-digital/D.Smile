@@ -44,6 +44,15 @@ struct CycleClock {
     while (counter <= 0) { counter += add; fired++; }
     return fired;
   }
+  // Subtract-per-call variant: `cycles` is charged on every call, including
+  // the re-check after a fire. The SPG200 timebase behaves this way relative
+  // to the CPU clock; the divided ticks it feeds (timers, TMB, 4-4096 Hz)
+  // depend on that phase, so exact accounting here breaks timer-paced games.
+  bool TickOnce(int cycles) {
+    counter -= (s64)cycles * mul;
+    if (counter <= 0) { counter += add; return true; }
+    return false;
+  }
   void Reset() { counter = add; }
 };
 
