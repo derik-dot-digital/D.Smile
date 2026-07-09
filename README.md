@@ -4,9 +4,7 @@
 
 # D.Smile
 
-**A modern VTech V.Smile emulator for Android.**
-
-Boot your childhood, dial in a CRT, and play the library on your phone.
+**VTech V.Smile emulator for Android.**
 
 <img src="https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84?style=flat-square" alt="Android 8.0+" />
 <img src="https://img.shields.io/badge/renderer-OpenGL%20ES-blue?style=flat-square" alt="OpenGL ES" />
