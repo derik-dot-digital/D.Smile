@@ -20,25 +20,24 @@
 
 **Play**
 - Runs V.Smile cartridge dumps straight away, no BIOS required.
-- Optional system ROM import for maximum compatibility, dropped in with a file picker and validated automatically.
-- Save states with live thumbnails and timestamps, and per game slot memory.
-- Rewind and fast forward, with an adjustable fast forward speed.
+- Optional system bios import for maximum compatibility. Not necessary for most titles.
+- Save states with thumbnails and timestamps, and per game slot memory.
+- Rewind and fast forward with adjustable speed. 
 
 **Look**
 - A real CRT shader with barrel curvature, phosphor glow, scanlines, aperture grille and vignette, each on its own intensity slider.
 - Pixel, sharp and CRT display modes, plus 4:3, stretch and integer scaling.
 - Themed letterbox backgrounds (black, wavy blue, or V.Smile purple) and silver or black TV bezels that wrap the picture.
-- A second, more accurate render path that adds the console's fade and colour effects on top of the fast one.
+- Two renderer options. One that should be fast and perfect for most games, but the second is intended to be a more accurate option for edge cases.
 
 **Control**
-- An on screen controller modelled on the real thing, with classic orange and pink themes and a swappable joystick.
+- An on screen controller modelled on the real thing, with classic orange and pink themes.
 - A full layout editor: drag to move, box select to move groups, resize with a multiplier, save and name your own layouts.
 - Gamepad support with remappable buttons and bindable hotkeys for save, load, fast forward and rewind.
-- Smooth, low latency input that keeps working when you switch audio output mid game.
 
 **Fit in**
 - Launches directly into a game from front ends like iiSU, Daijisho and ES-DE.
-- Sideload friendly, landscape everywhere, and it remembers your setup.
+- Lots of QOL features and bug fixes baked-in that a lot of niche emulators fall short on. 
 
 ## Screenshots
 
