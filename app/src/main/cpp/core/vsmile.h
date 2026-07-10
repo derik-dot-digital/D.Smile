@@ -33,6 +33,7 @@ class VSmileJoy {
   void StartTx();
   void QueueJoyUpdates();
   void QueueFullDump();
+  void QueueHeldRefresh();
   void SetRtsActive(bool active);
 
   VSmile& machine_;
@@ -56,10 +57,13 @@ class VSmileJoy {
   s64 idle_counter_ = kIdlePeriod;
   s64 rts_timeout_ = kRtsTimeout;
   s64 tx_start_counter_ = kTxStartDelay;
+  // Not serialized: pure retransmit phase, safe to restart on load.
+  s64 held_refresh_counter_ = kHeldRefreshPeriod;
 
   static constexpr s64 kIdlePeriod = 27000000;      // 1 s keepalive
   static constexpr s64 kRtsTimeout = 13500000;      // 0.5 s grant timeout
   static constexpr s64 kTxStartDelay = 97200;       // 3.6 ms after CTS
+  static constexpr s64 kHeldRefreshPeriod = 10800000;  // 0.4 s held-state refresh
 };
 
 // The V.Smile console: SPG200 + cartridge + sysrom + controller wiring.
