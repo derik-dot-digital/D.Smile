@@ -190,17 +190,14 @@ void VSmileJoy::QueueJoyUpdates() {
   input_dirty_ = false;
 }
 
-// Re-confirms currently-held FUNCTION BUTTONS only, each as its own byte.
-// Games with a hold timeout treat a button as released if it is never
-// re-confirmed (SpongeBob's hold-to-drive). Colors and the joystick are
-// deliberately NOT refreshed: games consume those reports as fresh events,
-// so re-sending reads as button mashing / cursor racing, and held-stick
-// behavior has never needed re-confirmation in any tested game.
+// Re-confirms a held ENTER, the one input games re-check during holds
+// ("press and hold ENTER" prompts; verified with SpongeBob's hold-to-drive,
+// which stalls if the hold is never re-confirmed). Everything else - EXIT,
+// HELP, ABC, colors, joystick - is deliberately NOT refreshed: games consume
+// those reports as one-shot events, so re-sending reads as repeated presses
+// (exit backing out of menus, help voice re-triggering, cursor racing).
 void VSmileJoy::QueueHeldRefresh() {
   if (cur_buttons_ & 1) QueueTx(0xA1);
-  if (cur_buttons_ & 2) QueueTx(0xA2);
-  if (cur_buttons_ & 4) QueueTx(0xA3);
-  if (cur_buttons_ & 8) QueueTx(0xA4);
 }
 
 void VSmileJoy::RunCycles(int cycles) {
@@ -215,7 +212,7 @@ void VSmileJoy::RunCycles(int cycles) {
   held_refresh_counter_ -= cycles;
   if (held_refresh_counter_ <= 0) {
     held_refresh_counter_ = kHeldRefreshPeriod;
-    const bool refreshable_held = (cur_buttons_ & 0xF) != 0;
+    const bool refreshable_held = (cur_buttons_ & 1) != 0;  // ENTER only
     if (active_ && refreshable_held && fifo_len_ == 0 && !tx_busy_ && !tx_starting_) {
       QueueHeldRefresh();
     }

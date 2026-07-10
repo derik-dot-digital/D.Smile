@@ -89,6 +89,66 @@ class MainActivity : Activity() {
         setContentView(root)
 
         scanRoms()
+        checkForUpdate(root)
+    }
+
+    // ---------------- update check ----------------
+
+    /** One anonymous GitHub API call; on a newer release, shows a tappable
+     *  banner under the version line that opens the release page. Silent on
+     *  any failure (offline, rate limit) so the screen never blocks on it. */
+    private fun checkForUpdate(root: LinearLayout) {
+        Thread {
+            try {
+                val conn = java.net.URL(
+                    "https://api.github.com/repos/derik-dot-digital/D.Smile/releases/latest"
+                ).openConnection() as java.net.HttpURLConnection
+                conn.setRequestProperty("Accept", "application/vnd.github+json")
+                conn.setRequestProperty("User-Agent", "D.Smile")
+                conn.connectTimeout = 6000
+                conn.readTimeout = 6000
+                val body = conn.inputStream.use { it.readBytes().decodeToString() }
+                conn.disconnect()
+                val json = org.json.JSONObject(body)
+                val remote = json.optString("tag_name").removePrefix("v")
+                val pageUrl = json.optString("html_url")
+                val local = packageManager.getPackageInfo(packageName, 0).versionName ?: return@Thread
+                if (pageUrl.isEmpty() || !isNewerVersion(remote, local)) return@Thread
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val pad = (resources.displayMetrics.density * 8).toInt()
+                    val banner = TextView(this).apply {
+                        text = "Update available: v$remote — tap to get it"
+                        textSize = 14f
+                        gravity = Gravity.CENTER_HORIZONTAL
+                        setTextColor(0xFF69F0AE.toInt())
+                        setPadding(pad, pad, pad, pad)
+                        setOnClickListener {
+                            try {
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, pageUrl, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                    root.addView(banner, root.indexOfChild(statusText))
+                }
+            } catch (e: Exception) {
+                // No network, rate-limited, or GitHub unreachable: say nothing.
+            }
+        }.start()
+    }
+
+    private fun isNewerVersion(remote: String, local: String): Boolean {
+        if (remote.isEmpty()) return false
+        val r = remote.split('.').map { it.toIntOrNull() ?: return false }
+        val l = local.split('.').map { it.toIntOrNull() ?: return false }
+        for (i in 0 until maxOf(r.size, l.size)) {
+            val a = r.getOrElse(i) { 0 }
+            val b = l.getOrElse(i) { 0 }
+            if (a != b) return a > b
+        }
+        return false
     }
 
     private fun pickFolder() {
