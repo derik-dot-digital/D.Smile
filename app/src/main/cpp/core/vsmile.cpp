@@ -256,9 +256,11 @@ void VSmileJoy::RunCycles(int cycles) {
         idle_counter_ = kIdlePeriod;
       }
       active_ = false;
-      probed_ = false;  // console will re-probe; stay quiet until it does
+      // probed_ and report_mode_ deliberately survive this reset: they are
+      // session facts (the console only probes every ~17 s and re-commands
+      // the mode only after our keep-alives), so wiping them here left the
+      // pad ignoring holds for many seconds after any brief console stall.
       dump_pending_ = false;
-      report_mode_ = 6;
       fifo_len_ = fifo_head_ = 0;
       QueueTx(0x55);
     }
