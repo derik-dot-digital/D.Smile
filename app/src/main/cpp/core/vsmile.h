@@ -63,7 +63,9 @@ class VSmileJoy {
   static constexpr s64 kIdlePeriod = 27000000;      // 1 s keepalive
   static constexpr s64 kRtsTimeout = 13500000;      // 0.5 s grant timeout
   static constexpr s64 kTxStartDelay = 97200;       // 3.6 ms after CTS
-  static constexpr s64 kHeldRefreshPeriod = 10800000;  // 0.4 s held-state refresh
+  // Games sample "still held?" frequently (SpongeBob's boating lesson stalls
+  // with anything slower than ~0.15 s between re-confirmations).
+  static constexpr s64 kHeldRefreshPeriod = 2700000;  // 0.1 s held-state refresh
 };
 
 // The V.Smile console: SPG200 + cartridge + sysrom + controller wiring.
