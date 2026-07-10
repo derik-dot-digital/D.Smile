@@ -190,24 +190,17 @@ void VSmileJoy::QueueJoyUpdates() {
   input_dirty_ = false;
 }
 
-// Re-reports whatever is currently held (buttons, colors, stick deflection).
-// The real pad keeps the console informed of non-neutral state; games with a
-// hold timeout treat a button as released if it is never re-confirmed. Only
-// non-neutral state is sent, so this is silent while the pad is untouched.
+// Re-reports currently-held function buttons and stick deflection. Games with
+// a hold timeout treat a button as released if it is never re-confirmed
+// (SpongeBob's hold-to-drive). Colors are deliberately NOT refreshed: games
+// treat each color report as a fresh press, so re-sending reads as spam.
+// Only non-neutral state is sent, so this is silent while the pad is idle.
 void VSmileJoy::QueueHeldRefresh() {
   // Each held function button is re-confirmed as its own byte.
   if (cur_buttons_ & 1) QueueTx(0xA1);
   if (cur_buttons_ & 2) QueueTx(0xA2);
   if (cur_buttons_ & 4) QueueTx(0xA3);
   if (cur_buttons_ & 8) QueueTx(0xA4);
-  if (cur_buttons_ >> 4) {
-    u8 b = 0x90;
-    if (cur_buttons_ & (1u << 7)) b |= 1;
-    if (cur_buttons_ & (1u << 6)) b |= 2;
-    if (cur_buttons_ & (1u << 5)) b |= 4;
-    if (cur_buttons_ & (1u << 4)) b |= 8;
-    QueueTx(b);
-  }
   if (cur_x_ != 0 || cur_y_ != 0) {
     u8 xb = 0xC0, yb = 0x80;
     if (cur_x_ > 0) xb = 0xC3 + (cur_x_ - 1);
@@ -231,8 +224,8 @@ void VSmileJoy::RunCycles(int cycles) {
   held_refresh_counter_ -= cycles;
   if (held_refresh_counter_ <= 0) {
     held_refresh_counter_ = kHeldRefreshPeriod;
-    const bool anything_held = (cur_buttons_ != 0) || cur_x_ != 0 || cur_y_ != 0;
-    if (active_ && anything_held && fifo_len_ == 0 && !tx_busy_ && !tx_starting_) {
+    const bool refreshable_held = (cur_buttons_ & 0xF) != 0 || cur_x_ != 0 || cur_y_ != 0;
+    if (active_ && refreshable_held && fifo_len_ == 0 && !tx_busy_ && !tx_starting_) {
       QueueHeldRefresh();
     }
   }
