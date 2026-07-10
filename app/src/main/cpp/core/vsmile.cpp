@@ -8,8 +8,8 @@ namespace dsmile {
 
 namespace {
 constexpr u32 kStateMagic = 0x44534D53;  // "DSMS"
-constexpr u32 kStateVersion = 4;
-constexpr u32 kMinStateVersion = 3;  // v3 differs only in the ADC block; migrated on load
+constexpr u32 kStateVersion = 5;
+constexpr u32 kMinStateVersion = 3;  // v3 ADC block and v4 pad block are migrated on load
 
 u32 Fnv1a(const u8* data, size_t n) {
   u32 h = 2166136261u;
@@ -35,10 +35,13 @@ void VSmileJoy::Reset() {
   sent_buttons_ = 0;
   input_dirty_ = false;
   dump_pending_ = false;
+  probed_ = false;
+  report_mode_ = 6;
   idle_counter_ = kIdlePeriod;
   rts_timeout_ = kRtsTimeout;
   tx_start_counter_ = kTxStartDelay;
-  held_refresh_counter_ = kHeldRefreshPeriod;
+  dump_settle_ = kDumpSettle;
+  held_repeat_counter_ = kHeldRepeatPeriod;
 }
 
 void VSmileJoy::SetRtsActive(bool active) {
@@ -82,15 +85,9 @@ void VSmileJoy::StartTx() {
 void VSmileJoy::TxDone() {
   DTRACE("[joy] txdone (busy=%d)\n", tx_busy_);
   if (!tx_busy_) return;
-  const bool was_active = active_;
   active_ = true;
   tx_busy_ = false;
-  if (cts_ && fifo_len_ > 0) {
-    StartTx();
-  } else if (fifo_len_ == 0 && dump_pending_) {
-    dump_pending_ = false;
-    QueueFullDump();
-  }
+  if (cts_ && fifo_len_ > 0) StartTx();
 }
 
 // Full state refresh (vertical, horizontal, colors, buttons) - the real pad
@@ -135,7 +132,21 @@ void VSmileJoy::Rx(u8 byte) {
     probe_history_[0] = (hi == 0x70) ? 0 : probe_history_[1];
     probe_history_[1] = byte & 0x0F;
     QueueTx(0xB0 | (((0u - probe_history_[0] - probe_history_[1]) ^ 0xA) & 0xF));
+    probed_ = true;
+  } else if (hi == 0xD0 || hi == 0xE0) {
+    // Reporting-mode command pair, sent by games after each of our 0x55
+    // keep-alives. The low nibble selects how the pad reports: games use
+    // E6/D6 (or E4/D4) in menus and scenes, and hold-to-drive minigames
+    // switch to E2/D0 (SpongeBob's boating lesson). Nibble 0 = fast
+    // auto-repeat of held function buttons; other nibbles = change-only.
+    // The pad also re-syncs with a full state dump once the burst settles.
+    // Never answer before the probe handshake: a dump mid-detection kills
+    // controller detection.
+    if (hi == 0xD0) report_mode_ = byte & 0x0F;
+    if (active_ && probed_) dump_pending_ = true;
   }
+  // Any console byte restarts the settle window so we answer after the burst.
+  dump_settle_ = kDumpSettle;
 }
 
 void VSmileJoy::UpdateInput(int joy_x, int joy_y, u32 buttons) {
@@ -190,16 +201,6 @@ void VSmileJoy::QueueJoyUpdates() {
   input_dirty_ = false;
 }
 
-// Re-confirms a held ENTER, the one input games re-check during holds
-// ("press and hold ENTER" prompts; verified with SpongeBob's hold-to-drive,
-// which stalls if the hold is never re-confirmed). Everything else - EXIT,
-// HELP, ABC, colors, joystick - is deliberately NOT refreshed: games consume
-// those reports as one-shot events, so re-sending reads as repeated presses
-// (exit backing out of menus, help voice re-triggering, cursor racing).
-void VSmileJoy::QueueHeldRefresh() {
-  if (cur_buttons_ & 1) QueueTx(0xA1);
-}
-
 void VSmileJoy::RunCycles(int cycles) {
   if (!tx_busy_) {
     idle_counter_ -= cycles;
@@ -209,12 +210,25 @@ void VSmileJoy::RunCycles(int cycles) {
     }
   }
 
-  held_refresh_counter_ -= cycles;
-  if (held_refresh_counter_ <= 0) {
-    held_refresh_counter_ = kHeldRefreshPeriod;
-    const bool refreshable_held = (cur_buttons_ & 1) != 0;  // ENTER only
-    if (active_ && refreshable_held && fifo_len_ == 0 && !tx_busy_ && !tx_starting_) {
-      QueueHeldRefresh();
+  // Console asked for a state re-sync: answer once its command burst settles.
+  if (dump_pending_) {
+    dump_settle_ -= cycles;
+    if (dump_settle_ <= 0) {
+      dump_pending_ = false;
+      QueueFullDump();
+    }
+  }
+
+  // Mode 0 (hold-to-drive minigames): re-send held function buttons fast.
+  held_repeat_counter_ -= cycles;
+  if (held_repeat_counter_ <= 0) {
+    held_repeat_counter_ = kHeldRepeatPeriod;
+    if (report_mode_ == 0 && active_ && probed_ && (cur_buttons_ & 0xF) != 0 &&
+        fifo_len_ == 0 && !tx_busy_ && !tx_starting_) {
+      if (cur_buttons_ & 1) QueueTx(0xA1);
+      if (cur_buttons_ & 2) QueueTx(0xA2);
+      if (cur_buttons_ & 4) QueueTx(0xA3);
+      if (cur_buttons_ & 8) QueueTx(0xA4);
     }
   }
 
@@ -242,6 +256,9 @@ void VSmileJoy::RunCycles(int cycles) {
         idle_counter_ = kIdlePeriod;
       }
       active_ = false;
+      probed_ = false;  // console will re-probe; stay quiet until it does
+      dump_pending_ = false;
+      report_mode_ = 6;
       fifo_len_ = fifo_head_ = 0;
       QueueTx(0x55);
     }
@@ -260,6 +277,7 @@ void VSmileJoy::SaveState(StateWriter& w) const {
   w.U32((u32)sent_x_); w.U32((u32)sent_y_); w.U32(sent_buttons_);
   w.B(input_dirty_);
   w.S64(idle_counter_); w.S64(rts_timeout_); w.S64(tx_start_counter_);
+  w.B(dump_pending_); w.B(probed_); w.U8(report_mode_);
 }
 
 void VSmileJoy::LoadState(StateReader& r) {
@@ -272,6 +290,15 @@ void VSmileJoy::LoadState(StateReader& r) {
   sent_x_ = (int)r.U32(); sent_y_ = (int)r.U32(); sent_buttons_ = r.U32();
   input_dirty_ = r.B();
   idle_counter_ = r.S64(); rts_timeout_ = r.S64(); tx_start_counter_ = r.S64();
+  if (r.version >= 5) {
+    dump_pending_ = r.B();
+    probed_ = r.B();
+    report_mode_ = r.U8();
+  } else {  // older saves came from live sessions: detection had completed
+    dump_pending_ = false;
+    probed_ = true;
+    report_mode_ = 6;
+  }
 }
 
 // ---------------- VSmile ----------------

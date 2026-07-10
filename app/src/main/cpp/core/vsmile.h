@@ -33,7 +33,6 @@ class VSmileJoy {
   void StartTx();
   void QueueJoyUpdates();
   void QueueFullDump();
-  void QueueHeldRefresh();
   void SetRtsActive(bool active);
 
   VSmile& machine_;
@@ -53,19 +52,21 @@ class VSmileJoy {
   u32 sent_buttons_ = 0;
   bool input_dirty_ = false;
   bool dump_pending_ = false;
+  bool probed_ = false;   // console completed a probe handshake since reset
+  u8 report_mode_ = 6;    // 0xDx low nibble; 0 = fast held auto-repeat
   // timers (cycle countdowns)
   s64 idle_counter_ = kIdlePeriod;
   s64 rts_timeout_ = kRtsTimeout;
   s64 tx_start_counter_ = kTxStartDelay;
-  // Not serialized: pure retransmit phase, safe to restart on load.
-  s64 held_refresh_counter_ = kHeldRefreshPeriod;
+  // Not serialized: phase only, safe to restart on load.
+  s64 dump_settle_ = kDumpSettle;
+  s64 held_repeat_counter_ = kHeldRepeatPeriod;
 
   static constexpr s64 kIdlePeriod = 27000000;      // 1 s keepalive
   static constexpr s64 kRtsTimeout = 13500000;      // 0.5 s grant timeout
   static constexpr s64 kTxStartDelay = 97200;       // 3.6 ms after CTS
-  // Games sample "still held?" frequently (SpongeBob's boating lesson stalls
-  // with anything slower than ~0.15 s between re-confirmations).
-  static constexpr s64 kHeldRefreshPeriod = 2700000;  // 0.1 s held-state refresh
+  static constexpr s64 kDumpSettle = 56250;         // 2 byte-times after a re-sync request
+  static constexpr s64 kHeldRepeatPeriod = 2700000; // 0.1 s mode-0 auto-repeat
 };
 
 // The V.Smile console: SPG200 + cartridge + sysrom + controller wiring.
