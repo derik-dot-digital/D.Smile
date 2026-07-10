@@ -167,19 +167,42 @@ class InputMapper(private val prefs: SharedPreferences) {
         else -> 0
     }
 
+    // Spring-back suppression: a released stick physically overshoots past
+    // center, briefly reading as the opposite direction beyond any sane
+    // deadzone. Track the last strong deflection; an opposing reading within
+    // the suppression window is spring-back and reads as center. A genuine
+    // reversal persists past the window and comes through ~1 frame late.
+    private var strongDirX = 0f
+    private var strongDirY = 0f
+    private var strongTime = 0L
+
     /** Handles joystick axis motion. Returns true if consumed. */
     fun onMotion(event: MotionEvent, hotkeys: HotkeyListener): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return false
         val x = event.getAxisValue(MotionEvent.AXIS_X)
         val y = event.getAxisValue(MotionEvent.AXIS_Y)
-        // Radial deadzone + remap: absorbs spring-back overshoot (which would
-        // otherwise register as a brief opposite direction) and small drift.
+        // Radial deadzone + remap: absorbs small drift near center.
         val mag = kotlin.math.hypot(x, y)
         val dz = 0.24f
         if (mag > dz) {
-            val scaled = ((mag - dz) / (1f - dz)).coerceIn(0f, 1f)
-            joyX = (x / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
-            joyY = (-y / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+            val now = android.os.SystemClock.uptimeMillis()
+            val nx = x / mag
+            val ny = y / mag
+            val opposesRecent = (now - strongTime) < 90 &&
+                (nx * strongDirX + ny * strongDirY) < -0.4f
+            if (opposesRecent) {
+                joyX = 0
+                joyY = 0
+            } else {
+                val scaled = ((mag - dz) / (1f - dz)).coerceIn(0f, 1f)
+                joyX = (x / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+                joyY = (-y / mag * scaled * 5f).roundToInt().coerceIn(-5, 5)
+                if (mag > 0.6f) {
+                    strongDirX = nx
+                    strongDirY = ny
+                    strongTime = now
+                }
+            }
         } else {
             joyX = 0
             joyY = 0
