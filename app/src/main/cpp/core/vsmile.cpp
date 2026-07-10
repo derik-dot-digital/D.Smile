@@ -40,7 +40,6 @@ void VSmileJoy::Reset() {
   idle_counter_ = kIdlePeriod;
   rts_timeout_ = kRtsTimeout;
   tx_start_counter_ = kTxStartDelay;
-  dump_settle_ = kDumpSettle;
   held_repeat_counter_ = kHeldRepeatPeriod;
 }
 
@@ -52,7 +51,10 @@ void VSmileJoy::SetRtsActive(bool active) {
 
 void VSmileJoy::QueueTx(u8 b) {
   DTRACE("[joy] queue %02x (cts=%d busy=%d)\n", b, cts_, tx_busy_);
-  if (fifo_len_ >= 16) return;
+  if (fifo_len_ >= 16) {
+    DTRACE("[joy] DROP %02x (fifo full)\n", b);
+    return;
+  }
   const bool was_empty = fifo_len_ == 0;
   fifo_[(fifo_head_ + fifo_len_) & 15] = b;
   fifo_len_++;
@@ -90,30 +92,6 @@ void VSmileJoy::TxDone() {
   if (cts_ && fifo_len_ > 0) StartTx();
 }
 
-// Full state refresh (vertical, horizontal, colors, buttons) - the real pad
-// sends this after probe bursts; it is how the console detects the pad.
-void VSmileJoy::QueueFullDump() {
-  u8 yb = 0x80, xb = 0xC0;
-  if (cur_y_ > 0) yb = 0x83 + (cur_y_ - 1);
-  else if (cur_y_ < 0) yb = 0x8B + (-cur_y_ - 1);
-  if (cur_x_ > 0) xb = 0xC3 + (cur_x_ - 1);
-  else if (cur_x_ < 0) xb = 0xCB + (-cur_x_ - 1);
-  QueueTx(yb);
-  QueueTx(xb);
-  u8 cb = 0x90;
-  if (cur_buttons_ & (1u << 7)) cb |= 1;
-  if (cur_buttons_ & (1u << 6)) cb |= 2;
-  if (cur_buttons_ & (1u << 5)) cb |= 4;
-  if (cur_buttons_ & (1u << 4)) cb |= 8;
-  QueueTx(cb);
-  u8 bb = 0xA0;
-  if (cur_buttons_ & 1) bb = 0xA1;
-  else if (cur_buttons_ & 2) bb = 0xA2;
-  else if (cur_buttons_ & 4) bb = 0xA3;
-  else if (cur_buttons_ & 8) bb = 0xA4;
-  QueueTx(bb);
-  sent_x_ = cur_x_; sent_y_ = cur_y_; sent_buttons_ = cur_buttons_;
-}
 
 void VSmileJoy::SetCts(bool state) {
   cts_ = state;
@@ -133,20 +111,16 @@ void VSmileJoy::Rx(u8 byte) {
     probe_history_[1] = byte & 0x0F;
     QueueTx(0xB0 | (((0u - probe_history_[0] - probe_history_[1]) ^ 0xA) & 0xF));
     probed_ = true;
-  } else if (hi == 0xD0 || hi == 0xE0) {
-    // Reporting-mode command pair, sent by games after each of our 0x55
-    // keep-alives. The low nibble selects how the pad reports: games use
-    // E6/D6 (or E4/D4) in menus and scenes, and hold-to-drive minigames
-    // switch to E2/D0 (SpongeBob's boating lesson). Nibble 0 = fast
-    // auto-repeat of held function buttons; other nibbles = change-only.
-    // The pad also re-syncs with a full state dump once the burst settles.
-    // Never answer before the probe handshake: a dump mid-detection kills
-    // controller detection.
-    if (hi == 0xD0) report_mode_ = byte & 0x0F;
-    if (active_ && probed_) dump_pending_ = true;
+  } else if (hi == 0xD0) {
+    // Reporting-mode command, sent by games (as an 0xEx/0xDx pair) after
+    // each of our 0x55 keep-alives. The low nibble selects how the pad
+    // reports: games use D6 (or D4) in menus and scenes, and hold-to-drive
+    // minigames switch to D0 (SpongeBob's boating lesson). Mode 0 = fast
+    // auto-repeat of held function buttons; other modes = change-only.
+    // Deliberately no other response: answering these with state dumps
+    // congested the line and got real presses flushed with the queue.
+    report_mode_ = byte & 0x0F;
   }
-  // Any console byte restarts the settle window so we answer after the burst.
-  dump_settle_ = kDumpSettle;
 }
 
 void VSmileJoy::UpdateInput(int joy_x, int joy_y, u32 buttons) {
@@ -207,15 +181,6 @@ void VSmileJoy::RunCycles(int cycles) {
     if (idle_counter_ <= 0) {
       idle_counter_ = kIdlePeriod;
       QueueTx(0x55);
-    }
-  }
-
-  // Console asked for a state re-sync: answer once its command burst settles.
-  if (dump_pending_) {
-    dump_settle_ -= cycles;
-    if (dump_settle_ <= 0) {
-      dump_pending_ = false;
-      QueueFullDump();
     }
   }
 

@@ -32,7 +32,6 @@ class VSmileJoy {
   void QueueTx(u8 b);
   void StartTx();
   void QueueJoyUpdates();
-  void QueueFullDump();
   void SetRtsActive(bool active);
 
   VSmile& machine_;
@@ -51,7 +50,7 @@ class VSmileJoy {
   int sent_x_ = 0, sent_y_ = 0;
   u32 sent_buttons_ = 0;
   bool input_dirty_ = false;
-  bool dump_pending_ = false;
+  bool dump_pending_ = false;  // unused since v0.4.3; kept for the v5 state layout
   bool probed_ = false;   // console completed a probe handshake since reset
   u8 report_mode_ = 6;    // 0xDx low nibble; 0 = fast held auto-repeat
   // timers (cycle countdowns)
@@ -59,13 +58,11 @@ class VSmileJoy {
   s64 rts_timeout_ = kRtsTimeout;
   s64 tx_start_counter_ = kTxStartDelay;
   // Not serialized: phase only, safe to restart on load.
-  s64 dump_settle_ = kDumpSettle;
   s64 held_repeat_counter_ = kHeldRepeatPeriod;
 
   static constexpr s64 kIdlePeriod = 27000000;      // 1 s keepalive
   static constexpr s64 kRtsTimeout = 13500000;      // 0.5 s grant timeout
   static constexpr s64 kTxStartDelay = 97200;       // 3.6 ms after CTS
-  static constexpr s64 kDumpSettle = 56250;         // 2 byte-times after a re-sync request
   static constexpr s64 kHeldRepeatPeriod = 2700000; // 0.1 s mode-0 auto-repeat
 };
 
