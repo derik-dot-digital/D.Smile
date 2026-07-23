@@ -61,6 +61,31 @@ A BIOS is **not required**. Games boot and play fine without one. Importing a V.
 
 D.Smile exposes an activity that front ends can launch straight into a game. See [docs/iisu-integration.md](docs/iisu-integration.md) for the iiSU config block and the general intent contract that also covers Daijisho and ES-DE.
 
+## Acknowledgements
+
+This project wouldn't exist without the V.Smile reverse engineering work that came before it:
+
+- **[veesem](https://github.com/sp1187/veesem)** by sp1187 (ISC license) — the
+  primary behavioral reference for this emulator. D.Smile's core was verified
+  against veesem instruction-by-instruction during development, and its
+  hardware model (unSP CPU, PPU, SPU, controller handshake) taught this
+  project most of what it knows.
+- **[MAME](https://github.com/mamedev/mame)** — the SPG2xx and V.Smile drivers
+  (Ryan Holtz, Vas Crabb, and contributors) documented the hardware registers,
+  timings and controller protocol that both veesem and D.Smile build on. The
+  accurate-render fade/saturation formulas follow MAME's implementation.
+- **[V.Frown](https://github.com/Schnert0/VFrown)** by Schnert0 — a further
+  reference for controller timing and hardware behavior.
+- **[Oboe](https://github.com/google/oboe)** by Google (Apache-2.0) — the
+  low-latency Android audio library D.Smile ships with.
+- The V.Smile research and homebrew community, whose compatibility testing and
+  hardware documentation made a project like this possible.
+
+Where D.Smile's behavior diverges from these projects (controller reporting
+modes, held-input handling, sprite DMA edge cases), the changes are original
+findings — documented in the commit history so they can flow back upstream.
+
 ## License
 
-Personal project, all original code. Not affiliated with or endorsed by VTech.
+Personal project. Code written for D.Smile, informed by the references above.
+Not affiliated with or endorsed by VTech.
